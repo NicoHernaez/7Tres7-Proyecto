@@ -83,6 +83,24 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos apli
 - App Usuario: https://7tres7-online.vercel.app
 - Admin Panel: https://7-tres7-admin.vercel.app
 
+### 6. Integraciones API (Preparadas)
+
+**Archivos creados:**
+- `database/07_INTEGRACIONES_API.sql` - Configura credenciales en business_config
+- `supabase/functions/create-mp-preference/index.ts` - Edge Function para crear pagos
+- `supabase/functions/mp-webhook/index.ts` - Edge Function para recibir notificaciones de pago
+
+**APIs configuradas (credenciales de 6to Sentido):**
+- **MercadoPago:** Public Key configurada, Access Token va en Edge Function
+- **Cloudinary:** Cloud name configurado (dtyaqrooy)
+- **Twilio WhatsApp:** Numero configurado (whatsapp:+14155238886)
+
+**Para activar MercadoPago:**
+1. Ejecutar `07_INTEGRACIONES_API.sql` en Supabase
+2. Deploy Edge Functions: `supabase functions deploy create-mp-preference`
+3. Configurar secret: `supabase secrets set MERCADOPAGO_ACCESS_TOKEN=APP_USR-xxx`
+4. Actualizar app-usuario para llamar a la Edge Function
+
 ---
 
 ## Configuracion Actual
@@ -98,24 +116,44 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos apli
 - Usa las credenciales del proyecto 6to Sentido
 - Redirect URI agregada: `https://yfdustfjfmifvgybwinr.supabase.co/auth/v1/callback`
 
+### MercadoPago (compartido con 6to Sentido)
+- **Public Key:** APP_USR-6eb41426-d39e-418b-9e30-2016506f983d
+- **Access Token:** APP_USR-5924995119910825-010419-e0d111986daf9f58ade8aa6032ba6ef4-30888844
+  - ⚠️ NUNCA poner en frontend, solo en Edge Functions
+
+### Cloudinary (compartido con 6to Sentido)
+- **Cloud Name:** dtyaqrooy
+
+### Twilio WhatsApp (compartido con 6to Sentido)
+- **Numero:** whatsapp:+14155238886
+
 ---
 
 ## Lo que falta hacer
 
-### Alta Prioridad
+### Alta Prioridad - PROXIMA SESION
 
-1. **Guardar pedidos en Supabase**
-   - La app usuario confirma pedidos pero NO los guarda en la base de datos
-   - Necesita: INSERT en tabla `orders` y `customers`
-   - El RLS actual bloquea inserts anonimos - evaluar si usar Edge Function o permitir insert anonimo
+1. **Pruebas de pedidos y pagos**
+   - Probar flujo completo: carrito → checkout → MercadoPago → confirmacion
+   - Verificar que pedidos se guardan en Supabase
+   - Verificar webhook de MercadoPago actualiza estado del pedido
 
-2. **Notificaciones de pedidos**
-   - Enviar notificacion al admin cuando llega un pedido nuevo
-   - Opciones: Realtime de Supabase, webhook, push notifications
+2. **Integracion Lucy (WhatsApp Bot)**
+   - Conectar con la API de Lucy/6to Sentido
+   - Enviar notificaciones al admin cuando llega pedido
+   - Campos en DB: lucy_enabled, lucy_webhook_url en business_config
+   - Credenciales Twilio disponibles: whatsapp:+14155238886
 
-3. **Integracion MercadoPago**
-   - Boton de MercadoPago en app usuario esta visual pero no funcional
-   - Necesita: crear preferencia de pago, redirect a MP, webhook de confirmacion
+3. **Integracion 6to Sentido**
+   - Definir que funcionalidad conectar
+   - API key disponible en env.local del proyecto 6to Sentido
+
+### Completado
+
+- ✅ **MercadoPago** - Edge Functions deployadas, app actualizada
+- ✅ **Guardar pedidos** - Ya funciona con INSERT anonimo
+- ✅ **Auth Google** - Admin panel con OAuth
+- ✅ **RLS** - Politicas configuradas
 
 ### Media Prioridad
 
@@ -180,7 +218,14 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos apli
 │   ├── 01_DATABASE_SCHEMA.sql  # Schema completo de la DB
 │   ├── 04_PRODUCTOS_REALES_7TRES7.sql    # Datos de empanadas
 │   ├── 05_PRODUCTOS_COMPLETOS_7TRES7.sql # Menu completo
-│   └── 06_AUTH_RLS_UPDATE.sql  # Politicas RLS (YA EJECUTADO)
+│   ├── 06_AUTH_RLS_UPDATE.sql  # Politicas RLS (YA EJECUTADO)
+│   └── 07_INTEGRACIONES_API.sql # Credenciales API (PENDIENTE)
+├── supabase/
+│   └── functions/
+│       ├── create-mp-preference/
+│       │   └── index.ts        # Crear preferencia MercadoPago
+│       └── mp-webhook/
+│           └── index.ts        # Webhook de pagos
 ├── CLAUDE.md                   # Esta documentacion
 └── README.md                   # Resumen del proyecto
 ```
@@ -208,6 +253,33 @@ git push
 ### Ver logs en Vercel
 - https://vercel.com/nicohernaez/7tres7-online
 - https://vercel.com/nicohernaez/7tres7-admin
+
+### Deploy Edge Functions (Supabase)
+
+```bash
+# Instalar Supabase CLI (si no esta instalado)
+npm install -g supabase
+
+# Login a Supabase
+supabase login
+
+# Vincular proyecto
+cd C:\Users\Nico\7Tres7-Proyecto
+supabase link --project-ref yfdustfjfmifvgybwinr
+
+# Configurar secrets (solo una vez)
+supabase secrets set MERCADOPAGO_ACCESS_TOKEN="APP_USR-5924995119910825-010419-e0d111986daf9f58ade8aa6032ba6ef4-30888844"
+
+# Deploy funciones
+supabase functions deploy create-mp-preference
+supabase functions deploy mp-webhook
+```
+
+### Probar Edge Function localmente
+
+```bash
+supabase functions serve create-mp-preference --env-file .env.local
+```
 
 ---
 
