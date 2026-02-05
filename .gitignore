@@ -1,0 +1,7 @@
+# Subcarpetas tienen sus propios repos
+app-usuario/
+admin-panel/
+
+# OS
+.DS_Store
+Thumbs.db
