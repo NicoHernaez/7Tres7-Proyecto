@@ -20,7 +20,7 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos apli
 
 ---
 
-## Estado Actual (19 Febrero 2026)
+## Estado Actual (23 Febrero 2026)
 
 ### ✅ Completado
 
@@ -28,16 +28,18 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos apli
 - ✅ **Admin panel** — Google OAuth, paginación, búsqueda, CRM con 2026 clientes importados
 - ✅ **MercadoPago conectado** (19 Feb 2026) — Edge Functions deployadas sin JWT, flujo completo carrito→checkout→pago→webhook
 - ✅ **Deploy Vercel arreglado** (19 Feb 2026) — Branch `master` sincronizada a `main`, ambas apps en producción con últimos commits
-- ✅ **RLS** — Políticas en todas las tablas, lectura pública para products/categories/business_config
+- ✅ **RLS** — Políticas en todas las tablas, lectura pública para products/categories/business_config/subcategories. INSERT anónimo en orders.
 - ✅ **Tipos de cliente / CRM** (6 Feb 2026) — ENUMs, retention_status, churn_risk_score, trigger automático, vistas
 - ✅ **2026 clientes importados** desde 6to-sentido (6 Feb 2026)
 - ✅ **Menú mejorado** (14 Feb 2026) — Observaciones por producto, punto de cocción, muslo/pechuga separados, dirección flexible, indicaciones de entrega
-- ✅ **Sync App <-> Admin** (23 Feb 2026) — Productos dinámicos desde Supabase, cache localStorage, fallback 3 niveles. SQL: `12_SYNC_MISSING_PRODUCTS.sql` pendiente de ejecutar.
+- ✅ **Sync App <-> Admin** (23 Feb 2026) — Productos dinámicos desde Supabase, cache localStorage, fallback 3 niveles. SQL `12` y `13` ejecutados.
+- ✅ **Fix RLS subcategories** (23 Feb 2026) — Policy anónima en subcategories + slugs corregidos. SQL `13_FIX_RLS_SUBCATEGORIES.sql` ejecutado.
+- ✅ **Fix carga rápida** (23 Feb 2026) — initApp() no-bloqueante, renderiza defaults inmediato y carga Supabase en background.
+- ✅ **Fix flan y confirmación** (23 Feb 2026) — Flan con opción "Solo" por defecto. saveOrderToSupabase resiliente a RLS de customers.
 
 ### ⏳ Pendiente
 
 #### Para probar ya (todo está conectado)
-- [ ] **Ejecutar SQL migration** — `12_SYNC_MISSING_PRODUCTS.sql` en Supabase SQL Editor (agrega productos faltantes, subcategorías, iconos, descripciones)
 - [ ] **Test de pago real** — Hacer un pedido con MercadoPago desde la app y verificar que el webhook actualiza `orders.payment_status` y crea registro en `payments`
 
 #### Necesita hardware/presencia física
@@ -45,6 +47,7 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos apli
 - [ ] **Lucy WhatsApp** — Necesita teléfono del negocio para verificar número en Meta Cloud API
 
 #### Media prioridad
+- [ ] **RLS customers** — La tabla `customers` NO tiene policy anónima. El app no puede crear/buscar clientes. Agregar policy de INSERT anónimo o usar Edge Function. Mientras tanto, `saveOrderToSupabase` guarda el pedido sin customer_id e incluye tel/nombre en customer_notes.
 - [ ] **Horarios del negocio** — `business_config` tiene `business_hours` JSON. Falta mostrar abierto/cerrado en app usuario + UI en admin para editar
 - [ ] **Gestión de stock** — Tabla `products` tiene `stock_enabled` y `stock_quantity`. Falta UI en admin + validación en app usuario
 - [ ] **Reportes y estadísticas** — Tabla `daily_stats` existe pero no se llena. Falta trigger/cron + UI
@@ -117,7 +120,8 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 │   ├── 07_INTEGRACIONES_API.sql # Credenciales API (EJECUTADO)
 │   ├── 08_CUSTOMER_TYPES.sql   # ENUMs, CRM (EJECUTADO)
 │   ├── 09_IMPORT_CUSTOMERS.sql # 2026 clientes (EJECUTADO)
-│   └── 12_SYNC_MISSING_PRODUCTS.sql # Sync productos app<->admin (PENDIENTE)
+│   ├── 12_SYNC_MISSING_PRODUCTS.sql # Sync productos app<->admin (EJECUTADO)
+│   └── 13_FIX_RLS_SUBCATEGORIES.sql # Fix RLS subcategories + slugs (EJECUTADO)
 ├── supabase/
 │   ├── config.toml             # verify_jwt = false para ambas funciones
 │   └── functions/
@@ -165,7 +169,23 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 - `addToCart` funciones usan `products[id]` global (precios de Supabase)
 - `UI_OPTIONS` constante con salsas, guarniciones, punto de cocción
 - Cambiar precio en admin → recargar app → precio actualizado
-- SQL migration: `12_SYNC_MISSING_PRODUCTS.sql` (ejecutar en SQL Editor)
+- `initApp()` es no-bloqueante: renderiza defaults inmediato, carga Supabase en background y re-renderiza
+- `inferSubcategory(slug)` + `SLUG_SUBCATEGORY_MAP`: fallback JS cuando RLS bloquea el JOIN de subcategories
+- SQL migrations: `12_SYNC_MISSING_PRODUCTS.sql` + `13_FIX_RLS_SUBCATEGORIES.sql` (ambas ejecutadas)
+
+### Slugs Supabase vs keys JS (23 Feb)
+- Los keys JS usan `_` (underscore), los slugs Supabase usan `-` (guión): `loadProductsFromDB()` hace `slug.replace(/-/g, '_')`
+- Slugs reales de Supabase que difieren del patrón simple: `pizza-muzzarella` (no `pizza-muzza`), `ojo-de-bife`, `bife-de-chorizo`, `matambre-a-la-pizza`, `bife-de-bondiola`, `matambrito-de-cerdo`, `cheese-cake-frutos-rojos`
+- Los defaults en JS ya usan estos keys correctos
+
+### Dos formatos de items en carrito
+- **Empanadas** (sistema legacy): `{ productId, cookingMethod, quantity, price }` — NO tiene `id` ni `label`
+- **Todo lo demás** (sistema nuevo): `{ id, label, price, quantity, icon, category? }` — NO tiene `productId`
+- `updateCart()`, `confirmOrder()`, `updatePromoBanner()` manejan ambos formatos con `if (item.label)`
+
+### Checkout y pedidos (23 Feb)
+- `saveOrderToSupabase()`: customers operations en try/catch propio (RLS puede bloquear). Si falla, el pedido se guarda sin customer_id e incluye tel+nombre en customer_notes.
+- Flan tiene opción "Solo" como default (no requiere seleccionar tipo)
 
 ### Observaciones por producto (14 Feb)
 - `initProductObservations()` inyecta input en cada tarjeta
@@ -173,7 +193,8 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 - Se muestra en: carrito, pago, confirmación, WhatsApp, Supabase
 
 ### Punto de cocción (14 Feb)
-- Integrado en `renderParrillaCard()` para asado, ojo_bife, bife_chorizo
+- Integrado en `renderParrillaCard()` para asado, ojo_de_bife, bife_de_chorizo
+- `conPuntoCoccion` incluye ambos formatos de slug (con y sin `_de_`)
 - Select: Jugoso / A punto / Bien cocido
 
 ### Muslo / Pechuga (14 Feb)
@@ -207,7 +228,7 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 
 - **Botones empanadas + MCP**: Los clicks del MCP no disparan onclick en HTML dinámico. Llamar `addToCart()` directo.
 - **Auth admin**: `onAuthStateChange` como único handler para evitar race conditions.
-- **RLS app usuario**: Políticas `FOR SELECT USING (true)` en products, categories, business_config. INSERT anónimo en orders.
+- **RLS app usuario**: Políticas `FOR SELECT USING (true)` en products, categories, business_config, subcategories. INSERT anónimo en orders. La tabla `customers` NO tiene policy anónima — saveOrderToSupabase maneja esto gracefully.
 - **Branch**: Ambos repos usan `main`. La branch `master` fue eliminada (19 Feb 2026).
 
 ---
