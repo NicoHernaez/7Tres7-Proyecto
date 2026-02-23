@@ -6,290 +6,226 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos apli
 1. **App Usuario** - Para que clientes hagan pedidos
 2. **Admin Panel** - Para administrar el negocio
 
----
-
-## Lo que se hizo
-
-### 1. Autenticacion con Google OAuth (Admin Panel)
-
-**Archivos modificados:** `admin-panel/index.html`
-
-- Eliminada la pantalla de Setup manual (URL + Key)
-- URL y anon key de Supabase hardcodeadas (son publicas)
-- Implementado login con Google OAuth via `db.auth.signInWithOAuth({ provider: 'google' })`
-- Implementado Magic Link como alternativa via `db.auth.signInWithOtp()`
-- Validacion de email autorizado (`nicohernaez22@gmail.com`)
-- Si email no autorizado: logout automatico + mensaje de error
-- Sidebar muestra nombre/email del usuario logueado
-- Boton "Cerrar sesion" en el sidebar
-- Fix de race condition en auth flow (variable `appInitialized` para evitar duplicados)
-
-**Configuracion requerida en Supabase Dashboard:**
-- Authentication > Providers > Google: habilitado con Client ID y Secret
-- Authentication > URL Configuration > Site URL: `https://7-tres7-admin.vercel.app`
-- Authentication > URL Configuration > Redirect URLs: `https://7-tres7-admin.vercel.app`
-
-**Configuracion requerida en Google Cloud Console:**
-- OAuth Client ID con redirect URI: `https://yfdustfjfmifvgybwinr.supabase.co/auth/v1/callback`
-
-### 2. Row Level Security (RLS) Restrictivo
-
-**Archivos modificados:**
-- `database/01_DATABASE_SCHEMA.sql` - Seccion RLS actualizada
-- `database/06_AUTH_RLS_UPDATE.sql` - Script de migracion (EJECUTADO)
-
-**Cambios:**
-- RLS habilitado en TODAS las tablas (antes solo orders, customers, products)
-- Politicas cambiadas de `USING (true)` a `USING (auth.role() = 'authenticated')`
-- Agregadas politicas de lectura publica para: products, categories, business_config (para app usuario)
-
-**Tablas con RLS:**
-- orders, customers, products, categories, subcategories
-- business_config, payments, printers, print_jobs, printer_templates
-- order_status_history, daily_stats, whatsapp_messages, activity_logs, admin_users
-
-### 3. Performance para 4.000+ Clientes
-
-**Archivos modificados:** `admin-panel/index.html`
-
-**Paginacion implementada:**
-- Clientes: 20 por pagina con navegacion Anterior/Siguiente
-- Productos: 20 por pagina
-- Pedidos: 20 por pagina
-
-**Busqueda de clientes:**
-- Campo de busqueda por nombre o telefono
-- Debounce de 300ms para evitar queries excesivas
-- Usa `ilike` para busqueda parcial
-
-**Indices agregados en DB:**
-- `idx_customers_name` - Para busqueda por nombre
-- `idx_orders_created_at` - Para filtros por fecha
-
-### 4. Configuracion App Usuario
-
-**Archivos modificados:** `app-usuario/index.html`
-
-- Configurada URL y anon key de Supabase (antes tenia placeholders)
-- Ahora carga 61 productos desde Supabase en vivo
-
-### 5. Deploy en Vercel
-
-**Repositorios GitHub creados:**
-- `NicoHernaez/7Tres7-Online` - App usuario
-- `NicoHernaez/7Tres7-Admin` - Admin panel
-
 **URLs de produccion:**
 - App Usuario: https://7tres7-online.vercel.app
 - Admin Panel: https://7-tres7-admin.vercel.app
 
-### 6. Integraciones API (Preparadas)
+**Repos GitHub:**
+- `NicoHernaez/7Tres7-Online` (branch: `main`)
+- `NicoHernaez/7Tres7-Admin` (branch: `main`)
 
-**Archivos creados:**
-- `database/07_INTEGRACIONES_API.sql` - Configura credenciales en business_config
-- `supabase/functions/create-mp-preference/index.ts` - Edge Function para crear pagos
-- `supabase/functions/mp-webhook/index.ts` - Edge Function para recibir notificaciones de pago
+**Supabase:** https://yfdustfjfmifvgybwinr.supabase.co
 
-**APIs configuradas (credenciales de 6to Sentido):**
-- **MercadoPago:** Public Key configurada, Access Token va en Edge Function
-- **Cloudinary:** Cloud name configurado (dtyaqrooy)
-- **Twilio WhatsApp:** Numero configurado (whatsapp:+14155238886)
-
-**Para activar MercadoPago:**
-1. Ejecutar `07_INTEGRACIONES_API.sql` en Supabase
-2. Deploy Edge Functions: `supabase functions deploy create-mp-preference`
-3. Configurar secret: `supabase secrets set MERCADOPAGO_ACCESS_TOKEN=APP_USR-xxx`
-4. Actualizar app-usuario para llamar a la Edge Function
+**Proyecto relacionado:** `C:\Users\Nico\6to-sentido\` — 6to Sentido (SaaS de contenido). 7Tres7 es el primer negocio que prueba la plataforma. Futuro: el sistema de pedidos se convertirá en white-label feature dentro de 6to Sentido.
 
 ---
 
-## Configuracion Actual
+## Estado Actual (19 Febrero 2026)
 
-### Supabase
-- **URL:** https://yfdustfjfmifvgybwinr.supabase.co
-- **Anon Key:** eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlmZHVzdGZqZm1pZnZneWJ3aW5yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyMzU3ODQsImV4cCI6MjA4NTgxMTc4NH0.YcLo7YXePi0_okJxtPuYLaMQI2-P4C8UxNzXnLfQoBY
+### ✅ Completado
 
-### Emails Autorizados (Admin)
-- nicohernaez22@gmail.com
+- ✅ **App usuario funcional** — 61 productos, carrito, checkout, registro por teléfono
+- ✅ **Admin panel** — Google OAuth, paginación, búsqueda, CRM con 2026 clientes importados
+- ✅ **MercadoPago conectado** (19 Feb 2026) — Edge Functions deployadas sin JWT, flujo completo carrito→checkout→pago→webhook
+- ✅ **Deploy Vercel arreglado** (19 Feb 2026) — Branch `master` sincronizada a `main`, ambas apps en producción con últimos commits
+- ✅ **RLS** — Políticas en todas las tablas, lectura pública para products/categories/business_config
+- ✅ **Tipos de cliente / CRM** (6 Feb 2026) — ENUMs, retention_status, churn_risk_score, trigger automático, vistas
+- ✅ **2026 clientes importados** desde 6to-sentido (6 Feb 2026)
+- ✅ **Menú mejorado** (14 Feb 2026) — Observaciones por producto, punto de cocción, muslo/pechuga separados, dirección flexible, indicaciones de entrega
+- ✅ **Sync App <-> Admin** (23 Feb 2026) — Productos dinámicos desde Supabase, cache localStorage, fallback 3 niveles. SQL: `12_SYNC_MISSING_PRODUCTS.sql` pendiente de ejecutar.
 
-### Google OAuth
-- Usa las credenciales del proyecto 6to Sentido
-- Redirect URI agregada: `https://yfdustfjfmifvgybwinr.supabase.co/auth/v1/callback`
+### ⏳ Pendiente
 
-### MercadoPago (compartido con 6to Sentido)
-- **Public Key:** APP_USR-6eb41426-d39e-418b-9e30-2016506f983d
-- **Access Token:** APP_USR-5924995119910825-010419-e0d111986daf9f58ade8aa6032ba6ef4-30888844
-  - ⚠️ NUNCA poner en frontend, solo en Edge Functions
+#### Para probar ya (todo está conectado)
+- [ ] **Ejecutar SQL migration** — `12_SYNC_MISSING_PRODUCTS.sql` en Supabase SQL Editor (agrega productos faltantes, subcategorías, iconos, descripciones)
+- [ ] **Test de pago real** — Hacer un pedido con MercadoPago desde la app y verificar que el webhook actualiza `orders.payment_status` y crea registro en `payments`
 
-### Cloudinary (compartido con 6to Sentido)
-- **Cloud Name:** dtyaqrooy
+#### Necesita hardware/presencia física
+- [ ] **Impresoras térmicas** — Necesita print server local. Evaluar: Electron app, servicio Windows, o impresión via API cloud. Verificar qué impresora tienen en el local.
+- [ ] **Lucy WhatsApp** — Necesita teléfono del negocio para verificar número en Meta Cloud API
 
-### Twilio WhatsApp (compartido con 6to Sentido)
-- **Numero:** whatsapp:+14155238886
+#### Media prioridad
+- [ ] **Horarios del negocio** — `business_config` tiene `business_hours` JSON. Falta mostrar abierto/cerrado en app usuario + UI en admin para editar
+- [ ] **Gestión de stock** — Tabla `products` tiene `stock_enabled` y `stock_quantity`. Falta UI en admin + validación en app usuario
+- [ ] **Reportes y estadísticas** — Tabla `daily_stats` existe pero no se llena. Falta trigger/cron + UI
 
----
-
-## Lo que falta hacer
-
-### Alta Prioridad - PROXIMA SESION
-
-1. **Pruebas de pedidos y pagos**
-   - Probar flujo completo: carrito → checkout → MercadoPago → confirmacion
-   - Verificar que pedidos se guardan en Supabase
-   - Verificar webhook de MercadoPago actualiza estado del pedido
-
-2. **Integracion Lucy (WhatsApp Bot)**
-   - Conectar con la API de Lucy/6to Sentido
-   - Enviar notificaciones al admin cuando llega pedido
-   - Campos en DB: lucy_enabled, lucy_webhook_url en business_config
-   - Credenciales Twilio disponibles: whatsapp:+14155238886
-
-3. **Integracion 6to Sentido**
-   - Definir que funcionalidad conectar
-   - API key disponible en env.local del proyecto 6to Sentido
-
-### Completado
-
-- ✅ **MercadoPago** - Edge Functions deployadas, app actualizada
-- ✅ **Guardar pedidos** - Ya funciona con INSERT anonimo
-- ✅ **Auth Google** - Admin panel con OAuth
-- ✅ **RLS** - Politicas configuradas
-
-### Media Prioridad
-
-4. **Impresoras**
-   - Sistema de impresoras esta en el admin pero necesita backend real
-   - Las impresoras termicas requieren un servidor local (print server)
-   - Evaluar: electron app, servicio Windows, o impresion via API cloud
-
-5. **Gestion de stock**
-   - Tabla products tiene campos stock_enabled y stock_quantity
-   - Falta UI en admin para activar/gestionar stock
-   - Falta validacion en app usuario para productos sin stock
-
-6. **Horarios del negocio**
-   - business_config tiene business_hours en JSON
-   - Falta mostrar en app usuario si esta abierto/cerrado
-   - Falta UI en admin para editar horarios
-
-7. **Zonas de delivery**
-   - business_config tiene delivery_zones (GeoJSON)
-   - Falta validar que la direccion del cliente este en zona de cobertura
-   - Falta UI en admin para dibujar zonas en mapa
-
-### Baja Prioridad
-
-8. **Descuentos por cantidad**
-   - business_config tiene min_empanadas_discount y discount_percentage
-   - La logica existe en el frontend pero revisar que funcione correctamente
-
-9. **Integracion Lucy (WhatsApp bot)**
-   - Campos lucy_enabled y lucy_webhook_url en business_config
-   - Falta implementar el bot y conectar con la API
-
-10. **Integracion 6to Sentido**
-    - Campos sexto_sentido_enabled y sexto_sentido_api_key en business_config
-    - Pendiente definir que hace esta integracion
-
-11. **Reportes y estadisticas**
-    - Tabla daily_stats existe pero no se llena automaticamente
-    - Falta crear trigger o cron job para calcular stats diarias
-    - Falta UI de reportes en admin
-
-12. **PWA / App instalable**
-    - Agregar manifest.json y service worker
-    - Para que usuarios puedan "instalar" la app en el celular
-
-13. **Tailwind en produccion**
-    - Actualmente usa CDN de Tailwind (muestra warning)
-    - Para produccion real: compilar Tailwind y servir CSS minificado
+#### Baja prioridad
+- [ ] **Zonas de delivery** — `delivery_zones` GeoJSON en business_config, falta validación de dirección + UI mapa
+- [ ] **Descuentos por cantidad** — Lógica existe en frontend (10% en 36+ empanadas), revisar que funcione
+- [ ] **PWA** — manifest.json + service worker para instalar en celular
+- [ ] **Tailwind producción** — Actualmente usa CDN (muestra warning), compilar para producción
 
 ---
 
-## Estructura de Archivos
+## MercadoPago — Configuración (19 Feb 2026)
+
+### Edge Functions (Supabase)
+
+| Función | URL | JWT | Descripción |
+|---------|-----|-----|-------------|
+| `create-mp-preference` | `.../functions/v1/create-mp-preference` | No | Crea preferencia de pago, retorna `initPoint` URL |
+| `mp-webhook` | `.../functions/v1/mp-webhook` | No | Recibe notificaciones de MercadoPago, actualiza pedido |
+
+Ambas deployadas con `verify_jwt = false` (config en `supabase/config.toml`).
+
+### Flujo completo
+1. Cliente elige "Mercado Pago" en checkout
+2. App guarda pedido en `orders` (Supabase INSERT anónimo)
+3. App llama a `create-mp-preference` con items, customer, orderId
+4. Edge Function crea preferencia en MercadoPago API → retorna `initPoint`
+5. App redirige al usuario a MercadoPago checkout
+6. Usuario paga
+7. MercadoPago notifica a `mp-webhook` → actualiza `orders.payment_status` + crea registro en `payments`
+8. Usuario vuelve a la app con `?status=success` → muestra confirmación → abre WhatsApp
+
+### Credenciales
+- **Public Key:** `APP_USR-6eb41426-d39e-418b-9e30-2016506f983d` (en `business_config`)
+- **Access Token:** Configurado como secret en Edge Functions (nunca en frontend)
+- **Cuenta MP:** nicohernaez22@gmail.com (User ID: 30888844)
+
+### Deploy de funciones
+```bash
+cd C:\Users\Nico\7Tres7-Proyecto
+SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy create-mp-preference --no-verify-jwt --project-ref yfdustfjfmifvgybwinr
+SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-verify-jwt --project-ref yfdustfjfmifvgybwinr
+```
+
+---
+
+## Arquitectura
+
+### Stack
+- **Frontend:** HTML + Tailwind CSS (CDN) + JavaScript vanilla
+- **Backend:** Supabase (PostgreSQL + Auth + Storage + Edge Functions)
+- **Pagos:** MercadoPago (Edge Functions)
+- **Deploy:** Vercel (static hosting)
+- **Auth admin:** Google OAuth via Supabase Auth
+
+### Estructura de Archivos
 
 ```
 7Tres7-Proyecto/
 ├── app-usuario/
-│   └── index.html              # App de clientes (213 KB)
+│   └── index.html              # App de clientes (single file, productos dinámicos desde Supabase)
 ├── admin-panel/
-│   └── index.html              # Panel de administracion (74 KB)
+│   └── index.html              # Panel de administración (74 KB, single file)
 ├── database/
-│   ├── 01_DATABASE_SCHEMA.sql  # Schema completo de la DB
-│   ├── 04_PRODUCTOS_REALES_7TRES7.sql    # Datos de empanadas
-│   ├── 05_PRODUCTOS_COMPLETOS_7TRES7.sql # Menu completo
-│   ├── 06_AUTH_RLS_UPDATE.sql  # Politicas RLS (YA EJECUTADO)
-│   └── 07_INTEGRACIONES_API.sql # Credenciales API (PENDIENTE)
+│   ├── 01_DATABASE_SCHEMA.sql  # Schema completo
+│   ├── 04_PRODUCTOS_REALES_7TRES7.sql
+│   ├── 05_PRODUCTOS_COMPLETOS_7TRES7.sql
+│   ├── 06_AUTH_RLS_UPDATE.sql  # RLS (EJECUTADO)
+│   ├── 07_INTEGRACIONES_API.sql # Credenciales API (EJECUTADO)
+│   ├── 08_CUSTOMER_TYPES.sql   # ENUMs, CRM (EJECUTADO)
+│   ├── 09_IMPORT_CUSTOMERS.sql # 2026 clientes (EJECUTADO)
+│   └── 12_SYNC_MISSING_PRODUCTS.sql # Sync productos app<->admin (PENDIENTE)
 ├── supabase/
+│   ├── config.toml             # verify_jwt = false para ambas funciones
 │   └── functions/
 │       ├── create-mp-preference/
-│       │   └── index.ts        # Crear preferencia MercadoPago
+│       │   └── index.ts
 │       └── mp-webhook/
-│           └── index.ts        # Webhook de pagos
-├── CLAUDE.md                   # Esta documentacion
-└── README.md                   # Resumen del proyecto
+│           └── index.ts
+├── CLAUDE.md
+└── README.md
 ```
+
+### Base de Datos (tablas principales)
+
+| Tabla | Estado | Descripción |
+|-------|--------|-------------|
+| `products` | ✅ 61 productos | Menú completo con precios |
+| `categories` | ✅ | Empanadas, Pizzas, Minutas, Restaurante, etc |
+| `orders` | ✅ | Pedidos con payment_status, payment_id, payment_details |
+| `customers` | ✅ 2026 | CRM con retention_status, churn_risk, acquisition_source |
+| `payments` | ✅ | Registro de pagos MercadoPago |
+| `business_config` | ✅ | Config del negocio (horarios, delivery, MP, etc) |
+| `printers` | ⏳ | Configuración de impresoras (sin backend) |
+| `print_jobs` | ⏳ | Cola de impresión (sin backend) |
+| `daily_stats` | ⏳ | Stats diarias (tabla vacía, sin trigger) |
+
+### Configuración
+
+**Supabase:**
+- URL: `https://yfdustfjfmifvgybwinr.supabase.co`
+- Anon Key: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlmZHVzdGZqZm1pZnZneWJ3aW5yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyMzU3ODQsImV4cCI6MjA4NTgxMTc4NH0.YcLo7YXePi0_okJxtPuYLaMQI2-P4C8UxNzXnLfQoBY`
+
+**Admin email autorizado:** nicohernaez22@gmail.com
+
+**Google OAuth:** Usa credenciales del proyecto 6to Sentido. Redirect URI: `https://yfdustfjfmifvgybwinr.supabase.co/auth/v1/callback`
 
 ---
 
-## Comandos Utiles
+## Detalle Técnico: App Usuario
 
-### Sincronizar cambios con GitHub
+### Productos dinámicos desde Supabase (23 Feb)
+- **Antes:** ~1030 líneas de HTML hardcodeado con precios estáticos
+- **Ahora:** Productos se cargan de Supabase y se renderizan dinámicamente
+- Fallback de 3 niveles: Supabase (online) → localStorage cache → defaults hardcodeados
+- `renderAllProducts()` genera el HTML para las 4 categorías
+- `addToCart` funciones usan `products[id]` global (precios de Supabase)
+- `UI_OPTIONS` constante con salsas, guarniciones, punto de cocción
+- Cambiar precio en admin → recargar app → precio actualizado
+- SQL migration: `12_SYNC_MISSING_PRODUCTS.sql` (ejecutar en SQL Editor)
 
-```bash
-# App usuario
-cd C:\Users\Nico\7Tres7-Proyecto\app-usuario
-git add .
-git commit -m "descripcion del cambio"
-git push
+### Observaciones por producto (14 Feb)
+- `initProductObservations()` inyecta input en cada tarjeta
+- `getProductObs(productId)` lee y limpia
+- Se muestra en: carrito, pago, confirmación, WhatsApp, Supabase
 
-# Admin panel
-cd C:\Users\Nico\7Tres7-Proyecto\admin-panel
-git add .
-git commit -m "descripcion del cambio"
-git push
-```
+### Punto de cocción (14 Feb)
+- Integrado en `renderParrillaCard()` para asado, ojo_bife, bife_chorizo
+- Select: Jugoso / A punto / Bien cocido
 
-### Ver logs en Vercel
-- https://vercel.com/nicohernaez/7tres7-online
-- https://vercel.com/nicohernaez/7tres7-admin
+### Muslo / Pechuga (14 Feb)
+- `pollo_parrilla` → `pollo_muslo` + `pollo_pechuga` (mismo precio $15.530)
 
-### Deploy Edge Functions (Supabase)
+### Dirección flexible (14 Feb)
+- Mínimo 3 chars (antes 10), acepta "18 n 737"
 
-```bash
-# Instalar Supabase CLI (si no esta instalado)
-npm install -g supabase
-
-# Login a Supabase
-supabase login
-
-# Vincular proyecto
-cd C:\Users\Nico\7Tres7-Proyecto
-supabase link --project-ref yfdustfjfmifvgybwinr
-
-# Configurar secrets (solo una vez)
-supabase secrets set MERCADOPAGO_ACCESS_TOKEN="APP_USR-5924995119910825-010419-e0d111986daf9f58ade8aa6032ba6ef4-30888844"
-
-# Deploy funciones
-supabase functions deploy create-mp-preference
-supabase functions deploy mp-webhook
-```
-
-### Probar Edge Function localmente
-
-```bash
-supabase functions serve create-mp-preference --env-file .env.local
-```
+### Indicaciones de entrega (14 Feb)
+- Campo `deliveryNotes` en registro, se envía en WhatsApp y Supabase
 
 ---
 
-## Notas Tecnicas
+## Detalle Técnico: CRM (6 Feb)
 
-### Por que los botones de empanadas no funcionaban con MCP
-Los clicks del MCP sobre los botones "Fritas" / "Al Horno" no disparaban el evento onclick porque el HTML generado dinamicamente usaba IDs de productos de Supabase que no coincidian exactamente. Se probo llamando `addToCart()` directamente via JavaScript y funciono.
+### ENUMs
+- `acquisition_source_type`: app, whatsapp, instagram, facebook, google, walk_in, referral, mercadopago_qr, mercadopago_point
+- `retention_status`: new, active, at_risk, churned, recovered
 
-### Auth flow del admin
-Se uso `onAuthStateChange` como unico handler de auth en lugar de combinarlo con `getSession()` para evitar race conditions donde la app se inicializaba dos veces.
+### Trigger automático
+`trigger_update_customer_retention` actualiza `retention_status` y `churn_risk_score` cuando cambia `last_order_at` o `total_orders`.
 
-### RLS y app usuario
-La app usuario necesita leer productos sin autenticacion. Se agregaron politicas `FOR SELECT USING (true)` en products, categories y business_config. Para guardar pedidos hay que evaluar si usar Edge Functions o permitir INSERT anonimo con validaciones.
+### Admin Panel
+- 5 stats cards por estado (colores)
+- Filtro dropdown por retention_status
+- Badge + icono origen + barra de churn risk por fila
+
+---
+
+## Notas Técnicas
+
+- **Botones empanadas + MCP**: Los clicks del MCP no disparan onclick en HTML dinámico. Llamar `addToCart()` directo.
+- **Auth admin**: `onAuthStateChange` como único handler para evitar race conditions.
+- **RLS app usuario**: Políticas `FOR SELECT USING (true)` en products, categories, business_config. INSERT anónimo en orders.
+- **Branch**: Ambos repos usan `main`. La branch `master` fue eliminada (19 Feb 2026).
+
+---
+
+## Idioma y Comunicación
+- El usuario se comunica en español. Responder SIEMPRE en español a menos que él cambie a inglés.
+- Ser orientado a la acción: cuando el usuario reporta un problema, proponer e implementar el fix inmediatamente.
+
+## Deployment y Verificación
+- Después de pushear a GitHub, Vercel auto-deploya. NO usar Vercel CLI a menos que se pida.
+- URLs de producción: App Usuario `https://7tres7-online.vercel.app`, Admin `https://7-tres7-admin.vercel.app`
+- DNS local no resuelve `api.vercel.com` — usar `--resolve api.vercel.com:443:76.76.21.112` para API calls
+
+## Supabase y Migraciones
+- SIEMPRE leer schema actual ANTES de escribir SQL de migración.
+- Cuando una migración falla, corregir el error específico — NO reescribir desde cero.
+
+## Bug Fixing
+- Corregir bugs inmediatamente, no diagnosticar excesivamente.
+- Auth usa Google OAuth, no passwords.
+- Identificar causa raíz → UN fix puntual.
