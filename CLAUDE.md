@@ -24,18 +24,20 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos apli
 
 ### ✅ Completado
 
-- ✅ **App usuario funcional** — 61 productos, carrito, checkout, registro por teléfono
-- ✅ **Admin panel** — Google OAuth, paginación, búsqueda, CRM con 2026 clientes importados
+- ✅ **App usuario funcional** — 77 productos, carrito, checkout, registro por teléfono
+- ✅ **Admin panel** — Google OAuth, paginación, búsqueda, CRM con 2025 clientes importados
 - ✅ **MercadoPago conectado** (19 Feb 2026) — Edge Functions deployadas sin JWT, flujo completo carrito→checkout→pago→webhook
 - ✅ **Deploy Vercel arreglado** (19 Feb 2026) — Branch `master` sincronizada a `main`, ambas apps en producción con últimos commits
 - ✅ **RLS** — Políticas en todas las tablas, lectura pública para products/categories/business_config/subcategories. INSERT anónimo en orders.
 - ✅ **Tipos de cliente / CRM** (6 Feb 2026) — ENUMs, retention_status, churn_risk_score, trigger automático, vistas
-- ✅ **2026 clientes importados** desde 6to-sentido (6 Feb 2026)
+- ✅ **2025 clientes importados** desde 6to-sentido (6 Feb 2026)
 - ✅ **Menú mejorado** (14 Feb 2026) — Observaciones por producto, punto de cocción, muslo/pechuga separados, dirección flexible, indicaciones de entrega
 - ✅ **Sync App <-> Admin** (23 Feb 2026) — Productos dinámicos desde Supabase, cache localStorage, fallback 3 niveles. SQL `12` y `13` ejecutados.
 - ✅ **Fix RLS subcategories** (23 Feb 2026) — Policy anónima en subcategories + slugs corregidos. SQL `13_FIX_RLS_SUBCATEGORIES.sql` ejecutado.
 - ✅ **Fix carga rápida** (23 Feb 2026) — initApp() no-bloqueante, renderiza defaults inmediato y carga Supabase en background.
 - ✅ **Fix flan y confirmación** (23 Feb 2026) — Flan con opción "Solo" por defecto. saveOrderToSupabase resiliente a RLS de customers.
+- ✅ **Tabla `discounts`** (21 Feb 2026) — Para descuentos generados por Lucy y n8n. Columnas recovery en `customers`.
+- ✅ **Integración Lucy/6to-sentido verificada** (23 Feb 2026) — Service key configurada, código revisado, build passing, bug delivery_fee corregido
 
 ### ⏳ Pendiente
 
@@ -145,6 +147,7 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 | `business_config` | ✅ | Config del negocio (horarios, delivery, MP, etc) |
 | `printers` | ⏳ | Configuración de impresoras (sin backend) |
 | `print_jobs` | ⏳ | Cola de impresión (sin backend) |
+| `discounts` | ✅ | Códigos descuento generados por Lucy y n8n workflows |
 | `daily_stats` | ⏳ | Stats diarias (tabla vacía, sin trigger) |
 
 ### Configuración
@@ -221,6 +224,44 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 - 5 stats cards por estado (colores)
 - Filtro dropdown por retention_status
 - Badge + icono origen + barra de churn risk por fila
+
+---
+
+## Integración Lucy / 6to Sentido (23 Feb 2026)
+
+### Estado de integración
+
+7Tres7 es el primer negocio conectado a **6to Sentido** (`C:\Users\Nico\6to-sentido\`). Lucy es la asistente virtual que atiende clientes por WhatsApp fuera de horario.
+
+**Qué está listo:**
+- ✅ `SUPABASE_7TRES7_SERVICE_KEY` configurada en 6to-sentido `.env.local`
+- ✅ Código Lucy en 6to-sentido: brain.ts detecta 7Tres7, genera respuestas con menú en vivo, crea descuentos
+- ✅ Tabla `discounts` en esta DB: Lucy genera códigos `LUCY15-XXXX` cuando el negocio está cerrado
+- ✅ Columnas recovery en `customers`: `last_recovery_attempt`, `recovery_attempts_count`, `recovery_exhausted`
+- ✅ `business_config.business_hours`: Lun/Mar cerrados, Mié-Dom dual time slots (12-15 + 19-00/01)
+- ✅ n8n workflows: "Reactivación At Risk" (`PpwgLv7qMCQyX0XF`) y "Recuperación Churned" (`93kHf0hkflows8tx`) — inactivos
+- ✅ Build de 6to-sentido passing con la integración
+
+**Qué falta para activar:**
+1. Teléfono físico del negocio para verificar en Meta Cloud API (WhatsApp Business)
+2. Configurar `WHATSAPP_PHONE_NUMBER_ID` + `WHATSAPP_ACCESS_TOKEN` en n8n
+3. Agregar `SUPABASE_7TRES7_SERVICE_KEY` a Vercel env vars de 6to-sentido (solo está en .env.local)
+4. Setear `lucy_enabled=true` y `lucy_webhook_url` en `business_config` cuando esté listo
+
+### Datos de integración
+- **business_id en 6to-sentido**: `d0825b81-f96b-4e9a-9806-b6ecf10d9806`
+- **whatsapp_accounts**: registrado como `local`, phone `+5492302515656`, sin verificar
+- **secretary_config**: mode=`active`, tone=`casual`, escalation a Nico
+- **Clientes**: 2025 (1584 churned, 247 new, 194 at_risk)
+
+### Flujo Lucy (cuando esté activo)
+1. Cliente envía WhatsApp al número del negocio
+2. Twilio webhook → 6to-sentido `/api/whatsapp/webhook`
+3. Webhook detecta cuenta `local` → Secretary flow
+4. Brain detecta 7Tres7 → Lucy flow específico
+5. Si negocio cerrado → genera descuento LUCY15-XXXX en tabla `discounts` + mensaje fuera de horario
+6. Si negocio abierto → consulta menú en vivo + responde con precios actualizados
+7. n8n cron workflows envían descuentos a clientes at_risk/churned
 
 ---
 
