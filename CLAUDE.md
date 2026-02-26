@@ -44,6 +44,7 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 - ✅ **App Electron impresión térmica** (25 Feb 2026) — `7tres7-print-app/` creada. Supabase Realtime sobre `print_jobs`. ESC/POS raw via WinAPI PowerShell. Configs BARRA/COCINA. SQL `14` ejecutado: categorías→impresoras asignadas, RLS anon, Realtime, trigger reescrito.
 - ✅ **App Caja documentada** (25 Feb 2026) — `7tres7-caja/` single-file HTML en Vercel. Master-detail pedidos, cierre de caja, staff, descuentos, WhatsApp, Realtime.
 - ✅ **QZ Tray eliminado de Caja** (25 Feb 2026) — Todo código QZ Tray removido. Impresión 100% via Supabase trigger + Electron app.
+- ✅ **PWA App Usuario** (25 Feb 2026) — manifest.json, service worker, offline.html, 9 iconos, install banner (Android + iOS). Instalable desde celular.
 
 ### ⏳ Pendiente
 
@@ -62,7 +63,6 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 #### Baja prioridad
 - [ ] **Zonas de delivery** — `delivery_zones` GeoJSON en business_config, falta validación de dirección + UI mapa
 - [ ] **Descuentos por cantidad** — Lógica existe en frontend (10% en 36+ empanadas), revisar que funcione
-- [ ] **PWA** — manifest.json + service worker para instalar en celular
 - [ ] **Tailwind producción** — Actualmente usa CDN (muestra warning), compilar para producción
 
 ---
@@ -116,7 +116,11 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 ```
 7Tres7-Proyecto/
 ├── app-usuario/
-│   └── index.html              # App de clientes (single file, productos dinámicos desde Supabase)
+│   ├── index.html              # App de clientes (single file, productos dinámicos desde Supabase)
+│   ├── manifest.json           # PWA manifest
+│   ├── sw.js                   # Service Worker
+│   ├── offline.html            # Página sin conexión
+│   └── icons/                  # Iconos PWA (72-512px + apple-touch-icon)
 ├── admin-panel/
 │   └── index.html              # Panel de administración (74 KB, single file)
 ├── database/
@@ -268,6 +272,37 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 
 ### Indicaciones de entrega (14 Feb)
 - Campo `deliveryNotes` en registro, se envía en WhatsApp y Supabase
+
+---
+
+## Detalle Técnico: PWA App Usuario (25 Feb 2026)
+
+### Archivos creados
+- `manifest.json` — Metadata PWA: name, short_name, theme_color `#e94560`, display `standalone`, 8 iconos
+- `sw.js` — Service Worker network-first. Cachea HTML y iconos. Ignora requests a Supabase/CDN. Fallback offline.
+- `offline.html` — Página sin conexión con botón reintentar y teléfono del local
+- `icons/` — 9 PNGs (72, 96, 128, 144, 152, 192, 384, 512) + apple-touch-icon (180)
+
+### Meta tags agregados al head
+```html
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#e94560">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="7Tres7">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+```
+
+### Install Banner
+- **Android/Chrome**: Captura `beforeinstallprompt`, muestra banner a los 5s con botón "Instalar". Si descarta, no vuelve por 7 días.
+- **iOS/Safari**: Detecta user-agent iOS + no-standalone, muestra instrucción "Toca compartir y Agregar a inicio" a los 8s.
+- No se muestra si la app ya está en modo standalone (ya instalada).
+
+### Service Worker Strategy
+- **Network-first**: Intenta fetch, si falla sirve desde cache
+- **Excluidos**: Supabase API, CDNs (Tailwind, Supabase JS) — siempre van a red
+- **Cache**: `7tres7-v1` con `/`, `/offline.html`, iconos principales
+- **Offline**: Si navega sin internet → muestra `offline.html`
 
 ---
 
