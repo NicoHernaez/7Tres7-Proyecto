@@ -2,17 +2,20 @@
 
 ## Resumen del Proyecto
 
-Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos aplicaciones:
+Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres aplicaciones:
 1. **App Usuario** - Para que clientes hagan pedidos
 2. **Admin Panel** - Para administrar el negocio
+3. **App Caja** - Panel de caja para gestionar pedidos en el local
 
 **URLs de produccion:**
 - App Usuario: https://7tres7-online.vercel.app
 - Admin Panel: https://7-tres7-admin.vercel.app
+- App Caja: https://7-tres7-caja.vercel.app
 
 **Repos GitHub:**
 - `NicoHernaez/7Tres7-Online` (branch: `main`)
 - `NicoHernaez/7Tres7-Admin` (branch: `main`)
+- `NicoHernaez/7Tres7-Caja` (branch: `main`) — local: `C:\Users\Nico\7tres7-caja`
 
 **Supabase:** https://yfdustfjfmifvgybwinr.supabase.co
 
@@ -20,7 +23,7 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos apli
 
 ---
 
-## Estado Actual (23 Febrero 2026)
+## Estado Actual (25 Febrero 2026)
 
 ### ✅ Completado
 
@@ -38,6 +41,9 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos apli
 - ✅ **Fix flan y confirmación** (23 Feb 2026) — Flan con opción "Solo" por defecto. saveOrderToSupabase resiliente a RLS de customers.
 - ✅ **Tabla `discounts`** (21 Feb 2026) — Para descuentos generados por Lucy y n8n. Columnas recovery en `customers`.
 - ✅ **Integración Lucy/6to-sentido verificada** (23 Feb 2026) — Service key configurada, código revisado, build passing, bug delivery_fee corregido
+- ✅ **App Electron impresión térmica** (25 Feb 2026) — `7tres7-print-app/` creada. Supabase Realtime sobre `print_jobs`. ESC/POS raw via WinAPI PowerShell. Configs BARRA/COCINA. SQL `14` ejecutado: categorías→impresoras asignadas, RLS anon, Realtime, trigger reescrito.
+- ✅ **App Caja documentada** (25 Feb 2026) — `7tres7-caja/` single-file HTML en Vercel. Master-detail pedidos, cierre de caja, staff, descuentos, WhatsApp, Realtime.
+- ✅ **QZ Tray eliminado de Caja** (25 Feb 2026) — Todo código QZ Tray removido. Impresión 100% via Supabase trigger + Electron app.
 
 ### ⏳ Pendiente
 
@@ -45,11 +51,10 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con dos apli
 - [ ] **Test de pago real** — Hacer un pedido con MercadoPago desde la app y verificar que el webhook actualiza `orders.payment_status` y crea registro en `payments`
 
 #### Necesita hardware/presencia física
-- [ ] **Impresoras térmicas** — Necesita print server local. Evaluar: Electron app, servicio Windows, o impresión via API cloud. Verificar qué impresora tienen en el local.
+- [ ] **Impresoras térmicas — Instalar** — SQL ya ejecutado. Falta: instalar app Electron en PC Barra y PC Cocina, verificar nombres de impresoras en Windows, probar con pedido real.
 - [ ] **Lucy WhatsApp** — Necesita teléfono del negocio para verificar número en Meta Cloud API
 
 #### Media prioridad
-- [ ] **RLS customers** — La tabla `customers` NO tiene policy anónima. El app no puede crear/buscar clientes. Agregar policy de INSERT anónimo o usar Edge Function. Mientras tanto, `saveOrderToSupabase` guarda el pedido sin customer_id e incluye tel/nombre en customer_notes.
 - [ ] **Horarios del negocio** — `business_config` tiene `business_hours` JSON. Falta mostrar abierto/cerrado en app usuario + UI en admin para editar
 - [ ] **Gestión de stock** — Tabla `products` tiene `stock_enabled` y `stock_quantity`. Falta UI en admin + validación en app usuario
 - [ ] **Reportes y estadísticas** — Tabla `daily_stats` existe pero no se llena. Falta trigger/cron + UI
@@ -123,7 +128,21 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 │   ├── 08_CUSTOMER_TYPES.sql   # ENUMs, CRM (EJECUTADO)
 │   ├── 09_IMPORT_CUSTOMERS.sql # 2026 clientes (EJECUTADO)
 │   ├── 12_SYNC_MISSING_PRODUCTS.sql # Sync productos app<->admin (EJECUTADO)
-│   └── 13_FIX_RLS_SUBCATEGORIES.sql # Fix RLS subcategories + slugs (EJECUTADO)
+│   ├── 13_FIX_RLS_SUBCATEGORIES.sql # Fix RLS subcategories + slugs (EJECUTADO)
+│   └── 14_PRINT_SYSTEM.sql   # print_jobs + printers + trigger + Realtime (EJECUTADO)
+├── 7tres7-print-app/
+│   ├── main.js                # Proceso principal Electron
+│   ├── preload.js             # Bridge seguro IPC
+│   ├── pc-config.json         # "BARRA" o "COCINA"
+│   ├── src/
+│   │   ├── config.js          # Config por PC, mapeo categorias→impresoras
+│   │   ├── printer.js         # ESC/POS builder + raw print via WinAPI
+│   │   ├── raw-print.ps1      # PowerShell: WinAPI WritePrinter
+│   │   ├── supabase-listener.js # Supabase Realtime en print_jobs
+│   │   └── tray.js            # Icono bandeja del sistema
+│   └── renderer/
+│       ├── index.html         # UI estado
+│       └── renderer.js        # Lógica renderer
 ├── supabase/
 │   ├── config.toml             # verify_jwt = false para ambas funciones
 │   └── functions/
@@ -133,22 +152,63 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 │           └── index.ts
 ├── CLAUDE.md
 └── README.md
+
+7tres7-caja/                      # Repo separado: NicoHernaez/7Tres7-Caja
+└── index.html                    # App Caja (single file, ~2100 líneas, Tailwind + Supabase)
 ```
 
-### Base de Datos (tablas principales)
+### Base de Datos (tablas — auditado 25 Feb 2026)
 
-| Tabla | Estado | Descripción |
-|-------|--------|-------------|
-| `products` | ✅ 61 productos | Menú completo con precios |
-| `categories` | ✅ | Empanadas, Pizzas, Minutas, Restaurante, etc |
-| `orders` | ✅ | Pedidos con payment_status, payment_id, payment_details |
-| `customers` | ✅ 2026 | CRM con retention_status, churn_risk, acquisition_source |
-| `payments` | ✅ | Registro de pagos MercadoPago |
-| `business_config` | ✅ | Config del negocio (horarios, delivery, MP, etc) |
-| `printers` | ⏳ | Configuración de impresoras (sin backend) |
-| `print_jobs` | ⏳ | Cola de impresión (sin backend) |
-| `discounts` | ✅ | Códigos descuento generados por Lucy y n8n workflows |
-| `daily_stats` | ⏳ | Stats diarias (tabla vacía, sin trigger) |
+| Tabla | Rows | Descripción |
+|-------|------|-------------|
+| `products` | 77 | Menú completo con precios, stock_enabled, stock_quantity |
+| `categories` | 6 | Empanadas, Pizzas, Minutas, Restaurant, Postres, Bebidas. Cada una con `printer_id` y `printer_secondary_id` |
+| `subcategories` | 10 | Subcategorías (ej: Horno/Fritas para Empanadas) |
+| `orders` | 25 | Pedidos (18 pending, 5 delivered, 1 cancelled, 1 confirmed) |
+| `customers` | 2026 | CRM con retention_status, churn_risk, acquisition_source |
+| `payments` | 8 | Pagos MP: mp_payment_id, mp_preference_id, amount, method, status, mp_response |
+| `business_config` | — | Config negocio (horarios, delivery, MP keys, etc) |
+| `printers` | 3 | Barra (BARRA), Minuta (MINUTA), Parrilla Delivery (PARRILLA) |
+| `print_jobs` | 3 | Cola impresión con Realtime. printer_id FK, raw_data JSONB, ticket_type, attempts |
+| `staff` | 2 | Cadetes para delivery (Cadete 1, Cadete 2). Roles: cadete. Usado por app Caja |
+| `discounts` | 0 | Códigos descuento para Lucy/n8n (tabla lista, sin datos aún) |
+| `admin_users` | — | Usuarios admin autorizados |
+| `activity_logs` | — | Log de actividad del sistema |
+| `order_status_history` | — | Historial de cambios de estado de pedidos |
+| `printer_templates` | — | Templates de impresión (sin uso activo) |
+| `whatsapp_messages` | — | Mensajes WhatsApp (para integración Lucy futura) |
+| `daily_stats` | 0 | Stats diarias (tabla vacía, sin trigger/cron) |
+
+### Triggers activos
+
+| Trigger | Tabla | Evento | Descripción |
+|---------|-------|--------|-------------|
+| `trigger_create_print_jobs` | `orders` | AFTER INSERT/UPDATE | Crea print_jobs cuando `status` cambia a `confirmed` |
+| `trigger_update_customer_stats` | `orders` | AFTER INSERT/UPDATE | Actualiza stats del cliente (total_orders, last_order_at, etc) |
+| `trigger_update_customer_retention` | `customers` | BEFORE UPDATE | Recalcula retention_status y churn_risk_score |
+| `update_*_updated_at` | varias | BEFORE UPDATE | Auto-actualiza `updated_at` en business_config, categories, customers, orders, print_jobs, printers, products |
+
+### RLS Policies (auditado 25 Feb 2026)
+
+| Tabla | Anon | Auth | Notas |
+|-------|------|------|-------|
+| `products` | SELECT | ALL | Lectura pública |
+| `categories` | SELECT | ALL | Lectura pública |
+| `subcategories` | SELECT | ALL | Lectura pública |
+| `business_config` | SELECT | ALL | Lectura pública |
+| `orders` | SELECT, INSERT | ALL | Anon puede crear pedidos y ver los propios |
+| `customers` | SELECT, INSERT, UPDATE | ALL | Anon CRUD completo (corregido) |
+| `payments` | — | ALL | Solo autenticados |
+| `printers` | SELECT | ALL | Lectura para app Electron (anon key) |
+| `print_jobs` | SELECT, UPDATE | ALL | Electron lee y actualiza status |
+| `staff` | SELECT | INSERT, UPDATE | Lectura pública, escritura autenticada |
+| `discounts` | — | ALL | Solo autenticados |
+| `daily_stats` | — | ALL | Solo autenticados |
+| `admin_users` | — | ALL | Solo autenticados |
+| `activity_logs` | — | ALL | Solo autenticados |
+| `order_status_history` | — | ALL | Solo autenticados |
+| `printer_templates` | — | ALL | Solo autenticados |
+| `whatsapp_messages` | — | ALL | Solo autenticados |
 
 ### Configuración
 
@@ -211,6 +271,50 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 
 ---
 
+## Detalle Técnico: App Caja (25 Feb 2026)
+
+### Ubicación y deploy
+- **Repo local:** `C:\Users\Nico\7tres7-caja`
+- **GitHub:** `NicoHernaez/7Tres7-Caja`
+- **URL:** https://7-tres7-caja.vercel.app
+- **Arquitectura:** Single-file HTML (`index.html`, ~2100 líneas), Tailwind CSS CDN, vanilla JS, Supabase
+
+### Auth
+- Google OAuth + Magic Link via Supabase Auth
+- Emails autorizados: `nicohernaez22@gmail.com`, `lumimartin24@gmail.com`, `martinludmila300@gmail.com`
+- Constante `AUTHORIZED_EMAILS` valida acceso post-login
+
+### Funcionalidades principales
+1. **Gestión de pedidos (master-detail):** Lista izquierda (58%) + detalle derecho (42%). Filtros por tipo (Todos/Mostrador/Delivery) y estado (Pendiente/Confirmado/Listo/En camino/Entregado/Cancelado). Búsqueda por # o nombre.
+2. **Flujo de estados:** Pendiente → Confirmado → Listo → En camino (delivery) → Entregado. Cancelar disponible en cualquier momento con motivo.
+3. **Impresión:** Al confirmar pedido, el trigger SQL `create_print_jobs_for_order()` crea print_jobs automáticamente. La app Electron los recoge via Realtime. Botón "Reimprimir" disponible en el detalle (usa `reprintOrder()`).
+4. **Medios de pago:** Efectivo, Débito, Crédito, MercadoPago, QR, Prepaga, Transferencia. Editable desde el detalle.
+5. **Descuentos:** Aplicar descuento % o monto fijo al pedido, con motivo.
+6. **Cierre de caja:** Modal con resumen del día o por turno (Mediodía/Noche). Muestra totales, por tipo, por medio de pago, productos más vendidos, cancelados.
+7. **Staff/Cadetes:** CRUD de cadetes para asignar a deliveries. Modal de gestión.
+8. **Agregar items:** Modal para agregar productos a pedidos existentes.
+9. **Notificación WhatsApp:** Abre chat de WhatsApp con mensaje pre-armado al confirmar, marcar listo, o en camino.
+10. **Realtime:** Suscripción a cambios en `orders` via Supabase Realtime. Auto-refresh al recibir INSERT/UPDATE.
+
+### Stats en header
+- Revenue del día, cantidad de pedidos, ticket promedio
+- Badge de pedidos demorados (>15min sin confirmar)
+
+### Variables de estado principales
+- `allOrders[]` — todos los pedidos del día
+- `selectedOrderId` — pedido seleccionado en el detalle
+- `motherTab` — filtro por tipo (todos/mostrador/delivery)
+- `subTab` — filtro por estado (pending/confirmed/ready/delivering/delivered/cancelled)
+- `staffCache[]` — cadetes cargados
+- `productsCache[]` — productos para modal "Agregar item"
+
+### QZ Tray: ELIMINADO (25 Feb 2026)
+- Todo el código de QZ Tray fue removido. La impresión se maneja exclusivamente via Supabase trigger + app Electron.
+- `printOrder()` reemplazada por `reprintOrder()` que fuerza re-ejecución del trigger.
+- `printCierreCaja()` solo muestra toast informativo (el cierre se visualiza en pantalla).
+
+---
+
 ## Detalle Técnico: CRM (6 Feb)
 
 ### ENUMs
@@ -265,11 +369,66 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 
 ---
 
+## Detalle Técnico: App Impresión Electron (25 Feb 2026)
+
+### Arquitectura
+- **Comunicación**: Supabase Realtime (NO WebSocket a Vercel — Vercel no soporta WS persistente)
+- **Flujo**: Caja confirma pedido → trigger SQL crea `print_jobs` row → Supabase Realtime notifica → Electron recibe → filtra items por categoría → imprime ESC/POS
+- **Impresión**: Raw print via WinAPI (`winspool.drv WritePrinter`) usando PowerShell. Fallback: `copy /b` a impresora compartida.
+- **Codificación**: CP858 para caracteres españoles (ñ, á, é, etc.) via `iconv-lite`
+
+### PCs y Impresoras
+| PC | IP | Impresora | Modelo | Categorías |
+|----|----|-----------|---------|----|
+| BARRA | 192.168.1.6 | Barra | ITPOS 80EU | bebidas, gaseosas, cervezas, vinos + ticket completo |
+| COCINA | 192.168.1.9 | Minuta | 3nStar RPT008 | empanadas, pizzas, minutas, postres |
+| COCINA | 192.168.1.9 | Parrilla Delivery | Hasar MIS1785 | restaurant, carnes, pastas, parrilla |
+
+### Configuración por PC
+- Archivo `pc-config.json` en raíz de la app: `{"pc": "BARRA"}` o `{"pc": "COCINA"}`
+- Fallback: detecta por hostname de Windows
+- Default: BARRA
+
+### Formato `order_data` en `print_jobs`
+```json
+{
+  "orderNumber": 123,
+  "tableOrDelivery": "Delivery - Calle 18 N 737",
+  "items": [{"name": "Emp. Carne", "category": "empanadas", "quantity": 6, "price": 1700, "subtotal": 10200, "notes": "Sin picante", "cooking": "horno"}],
+  "subtotal": 25000, "discount": 0, "deliveryFee": 1500, "total": 26500,
+  "paymentMethod": "cash", "customerNotes": "Tocar timbre"
+}
+```
+
+### SQL ejecutado (25 Feb)
+- Categorías asignadas a impresoras: Empanadas/Pizzas/Minutas/Postres → Minuta, Restaurant → Parrilla Delivery, Bebidas → Barra
+- Barra como `printer_secondary_id` en todas las categorías (ticket completo)
+- RLS: anon SELECT + UPDATE en `print_jobs`, anon SELECT en `printers`
+- Realtime habilitado en `print_jobs`
+- Trigger `create_print_jobs_for_order()` reescrito: filtra items por category, 1 job/impresora + 1 full_ticket para Barra
+
+### Pasos para instalar en las PCs del local
+1. Ejecutar `14_PRINT_SYSTEM.sql` en Supabase
+2. En Supabase Dashboard: Database → Replication → verificar que `print_jobs` está en `supabase_realtime`
+3. Compartir impresoras en Windows (nombres exactos: "Barra", "Minuta", "Parrilla Delivery")
+4. En PC Barra: copiar app, `pc-config.json` con `"pc": "BARRA"`, ejecutar `npm start` (o instalar .exe)
+5. En PC Cocina: copiar app, `pc-config.json` con `"pc": "COCINA"`, ejecutar
+6. Probar con botón "Imprimir Prueba" en la UI
+
+### Build del instalador .exe
+```bash
+cd 7tres7-print-app
+npm run build:win
+# Genera dist/7Tres7 Print Setup X.X.X.exe
+```
+
+---
+
 ## Notas Técnicas
 
 - **Botones empanadas + MCP**: Los clicks del MCP no disparan onclick en HTML dinámico. Llamar `addToCart()` directo.
 - **Auth admin**: `onAuthStateChange` como único handler para evitar race conditions.
-- **RLS app usuario**: Políticas `FOR SELECT USING (true)` en products, categories, business_config, subcategories. INSERT anónimo en orders. La tabla `customers` NO tiene policy anónima — saveOrderToSupabase maneja esto gracefully.
+- **RLS app usuario**: Políticas `FOR SELECT USING (true)` en products, categories, business_config, subcategories. INSERT anónimo en orders. La tabla `customers` tiene policies anón SELECT+INSERT+UPDATE (corregido 25 Feb).
 - **Branch**: Ambos repos usan `main`. La branch `master` fue eliminada (19 Feb 2026).
 
 ---
