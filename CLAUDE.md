@@ -45,18 +45,18 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 - ✅ **App Caja documentada** (25 Feb 2026) — `7tres7-caja/` single-file HTML en Vercel. Master-detail pedidos, cierre de caja, staff, descuentos, WhatsApp, Realtime.
 - ✅ **QZ Tray eliminado de Caja** (25 Feb 2026) — Todo código QZ Tray removido. Impresión 100% via Supabase trigger + Electron app.
 - ✅ **PWA App Usuario** (25 Feb 2026) — manifest.json, service worker, offline.html, 9 iconos, install banner (Android + iOS). Instalable desde celular.
+- ✅ **Horarios del negocio** (26 Feb 2026) — App usuario: indicador abierto/cerrado en welcome + banner en menú cuando cerrado. Admin: sección "Horarios" con toggle por día, turnos mediodía/noche, guardar a Supabase.
 
 ### ⏳ Pendiente
 
 #### Para probar ya (todo está conectado)
-- [ ] **Test de pago real** — Hacer un pedido con MercadoPago desde la app y verificar que el webhook actualiza `orders.payment_status` y crea registro en `payments`
+- [ ] **Test de pago real** — Hacer un pedido con MercadoPago desde otra cuenta y verificar que el webhook actualiza `orders.payment_status` y crea registro en `payments`
 
 #### Necesita hardware/presencia física
 - [ ] **Impresoras térmicas — Instalar** — SQL ya ejecutado. Falta: instalar app Electron en PC Barra y PC Cocina, verificar nombres de impresoras en Windows, probar con pedido real.
 - [ ] **Lucy WhatsApp** — Necesita teléfono del negocio para verificar número en Meta Cloud API
 
 #### Media prioridad
-- [ ] **Horarios del negocio** — `business_config` tiene `business_hours` JSON. Falta mostrar abierto/cerrado en app usuario + UI en admin para editar
 - [ ] **Gestión de stock** — Tabla `products` tiene `stock_enabled` y `stock_quantity`. Falta UI en admin + validación en app usuario
 - [ ] **Reportes y estadísticas** — Tabla `daily_stats` existe pero no se llena. Falta trigger/cron + UI
 
@@ -172,7 +172,7 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 | `customers` | 2026 | CRM con retention_status, churn_risk, acquisition_source |
 | `payments` | 8 | Pagos MP: mp_payment_id, mp_preference_id, amount, method, status, mp_response |
 | `business_config` | — | Config negocio (horarios, delivery, MP keys, etc) |
-| `printers` | 3 | Barra (BARRA), Minuta (MINUTA), Parrilla Delivery (PARRILLA) |
+| `printers` | 3 | Barra (BARRA), minuta (MINUTA), parrilla delivery (PARRILLA). Nombres = nombres exactos en Windows |
 | `print_jobs` | 3 | Cola impresión con Realtime. printer_id FK, raw_data JSONB, ticket_type, attempts |
 | `staff` | 2 | Cadetes para delivery (Cadete 1, Cadete 2). Roles: cadete. Usado por app Caja |
 | `discounts` | 0 | Códigos descuento para Lucy/n8n (tabla lista, sin datos aún) |
@@ -374,7 +374,7 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 
 **Qué está listo:**
 - ✅ `SUPABASE_7TRES7_SERVICE_KEY` configurada en 6to-sentido `.env.local`
-- ✅ Código Lucy en 6to-sentido: brain.ts detecta 7Tres7, genera respuestas con menú en vivo, crea descuentos
+- ✅ Código Lucy aislado en 6to-sentido: `src/lib/7tres7/` (lucy-handler, lucy-commands, menu, client, lucy-prompt)
 - ✅ Tabla `discounts` en esta DB: Lucy genera códigos `LUCY15-XXXX` cuando el negocio está cerrado
 - ✅ Columnas recovery en `customers`: `last_recovery_attempt`, `recovery_attempts_count`, `recovery_exhausted`
 - ✅ `business_config.business_hours`: Lun/Mar cerrados, Mié-Dom dual time slots (12-15 + 19-00/01)
@@ -385,7 +385,7 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 1. Teléfono físico del negocio para verificar en Meta Cloud API (WhatsApp Business)
 2. Configurar `WHATSAPP_PHONE_NUMBER_ID` + `WHATSAPP_ACCESS_TOKEN` en n8n
 3. Agregar `SUPABASE_7TRES7_SERVICE_KEY` a Vercel env vars de 6to-sentido (solo está en .env.local)
-4. Setear `lucy_enabled=true` y `lucy_webhook_url` en `business_config` cuando esté listo
+4. `secretary_config.lucy_enabled` ya es `true` (migración 26 Feb 2026). Setear `lucy_webhook_url` en `business_config` cuando esté listo
 
 ### Datos de integración
 - **business_id en 6to-sentido**: `d0825b81-f96b-4e9a-9806-b6ecf10d9806`
@@ -397,10 +397,11 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 1. Cliente envía WhatsApp al número del negocio
 2. Twilio webhook → 6to-sentido `/api/whatsapp/webhook`
 3. Webhook detecta cuenta `local` → Secretary flow
-4. Brain detecta 7Tres7 → Lucy flow específico
+4. Secretary lee `secretary_config.lucy_enabled=true` → Lucy handler (`src/lib/7tres7/lucy-handler.ts`)
 5. Si negocio cerrado → genera descuento LUCY15-XXXX en tabla `discounts` + mensaje fuera de horario
 6. Si negocio abierto → consulta menú en vivo + responde con precios actualizados
-7. n8n cron workflows envían descuentos a clientes at_risk/churned
+7. Admin Brain commands (pausar lucy, estado lucy, etc.) → `src/lib/7tres7/lucy-commands.ts` via command registry
+8. n8n cron workflows envían descuentos a clientes at_risk/churned (insertan directo via Supabase REST, no via API)
 
 ---
 
@@ -413,11 +414,11 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 - **Codificación**: CP858 para caracteres españoles (ñ, á, é, etc.) via `iconv-lite`
 
 ### PCs y Impresoras
-| PC | IP | Impresora | Modelo | Categorías |
+| PC | IP | Nombre Windows | Modelo | Categorías |
 |----|----|-----------|---------|----|
 | BARRA | 192.168.1.6 | Barra | ITPOS 80EU | bebidas, gaseosas, cervezas, vinos + ticket completo |
-| COCINA | 192.168.1.9 | Minuta | 3nStar RPT008 | empanadas, pizzas, minutas, postres |
-| COCINA | 192.168.1.9 | Parrilla Delivery | Hasar MIS1785 | restaurant, carnes, pastas, parrilla |
+| COCINA | 192.168.1.9 | minuta | 3nStar RPT008 | empanadas, pizzas, minutas, postres |
+| COCINA | 192.168.1.9 | parrilla delivery | Hasar MIS1785 | restaurant, carnes, pastas, parrilla |
 
 ### Configuración por PC
 - Archivo `pc-config.json` en raíz de la app: `{"pc": "BARRA"}` o `{"pc": "COCINA"}`
