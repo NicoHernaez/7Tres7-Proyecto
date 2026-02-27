@@ -41,7 +41,8 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 - ✅ **Fix flan y confirmación** (23 Feb 2026) — Flan con opción "Solo" por defecto. saveOrderToSupabase resiliente a RLS de customers.
 - ✅ **Tabla `discounts`** (21 Feb 2026) — Para descuentos generados por Lucy y n8n. Columnas recovery en `customers`.
 - ✅ **Integración Lucy/6to-sentido verificada** (23 Feb 2026) — Service key configurada, código revisado, build passing, bug delivery_fee corregido
-- ✅ **App Electron impresión térmica** (25 Feb 2026) — `7tres7-print-app/` creada. Supabase Realtime sobre `print_jobs`. ESC/POS raw via WinAPI PowerShell. Configs BARRA/COCINA. SQL `14` ejecutado: categorías→impresoras asignadas, RLS anon, Realtime, trigger reescrito.
+- ✅ **App Electron impresión térmica** (25 Feb 2026) — `7tres7-print-app/` creada. Supabase Realtime sobre `print_jobs`. ESC/POS raw via WinAPI PowerShell inline. Configs BARRA/COCINA. SQL `14` ejecutado: categorías→impresoras asignadas, RLS anon, Realtime, trigger reescrito.
+- ✅ **Fix impresión .exe portable** (27 Feb 2026) — Eliminado `raw-print.ps1` externo (no se empaquetaba). PowerShell 100% inline via `-EncodedCommand`. 2 fallbacks: `copy /b` + `print /d:`. Detección `pc-config.json` mejorada (5 paths). Nombres impresoras case-sensitive. v1.0.1.
 - ✅ **App Caja documentada** (25 Feb 2026) — `7tres7-caja/` single-file HTML en Vercel. Master-detail pedidos, cierre de caja, staff, descuentos, WhatsApp, Realtime.
 - ✅ **QZ Tray eliminado de Caja** (25 Feb 2026) — Todo código QZ Tray removido. Impresión 100% via Supabase trigger + Electron app.
 - ✅ **PWA App Usuario** (25 Feb 2026) — manifest.json, service worker, offline.html, 9 iconos, install banner (Android + iOS). Instalable desde celular.
@@ -138,11 +139,10 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 ├── 7tres7-print-app/
 │   ├── main.js                # Proceso principal Electron
 │   ├── preload.js             # Bridge seguro IPC
-│   ├── pc-config.json         # "BARRA" o "COCINA"
+│   ├── pc-config.json         # {"pc":"BARRA","printers":["Barra"]}
 │   ├── src/
-│   │   ├── config.js          # Config por PC, mapeo categorias→impresoras
-│   │   ├── printer.js         # ESC/POS builder + raw print via WinAPI
-│   │   ├── raw-print.ps1      # PowerShell: WinAPI WritePrinter
+│   │   ├── config.js          # Config por PC, mapeo categorias→impresoras, CATEGORY_PRINTER_MAP
+│   │   ├── printer.js         # ESC/POS builder + raw print via WinAPI inline (NO .ps1)
 │   │   ├── supabase-listener.js # Supabase Realtime en print_jobs
 │   │   └── tray.js            # Icono bandeja del sistema
 │   └── renderer/
@@ -419,7 +419,7 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 ### Arquitectura
 - **Comunicación**: Supabase Realtime (NO WebSocket a Vercel — Vercel no soporta WS persistente)
 - **Flujo**: Caja confirma pedido → trigger SQL crea `print_jobs` row → Supabase Realtime notifica → Electron recibe → filtra items por categoría → imprime ESC/POS
-- **Impresión**: Raw print via WinAPI (`winspool.drv WritePrinter`) usando PowerShell. Fallback: `copy /b` a impresora compartida.
+- **Impresión**: Raw print via WinAPI (`winspool.drv WritePrinter`) usando PowerShell inline `-EncodedCommand` (NO archivos .ps1 externos). Fallback 1: `copy /b`. Fallback 2: `print /d:`.
 - **Codificación**: CP858 para caracteres españoles (ñ, á, é, etc.) via `iconv-lite`
 
 ### PCs y Impresoras
@@ -430,9 +430,11 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 | COCINA | 192.168.1.9 | parrilla delivery | Hasar MIS1785 | restaurant, carnes, pastas, parrilla |
 
 ### Configuración por PC
-- Archivo `pc-config.json` en raíz de la app: `{"pc": "BARRA"}` o `{"pc": "COCINA"}`
+- Archivo `pc-config.json` junto al .exe: `{"pc": "BARRA", "printers": ["Barra"]}` o `{"pc": "COCINA", "printers": ["minuta", "parrilla delivery"]}`
+- Detección en 5 ubicaciones: PORTABLE_EXECUTABLE_DIR, junto al .exe, resources, relativo a src, CWD
 - Fallback: detecta por hostname de Windows
 - Default: BARRA
+- **Nombres CASE-SENSITIVE**: `Barra` (mayúscula), `minuta` y `parrilla delivery` (minúscula)
 
 ### Formato `order_data` en `print_jobs`
 ```json
@@ -455,16 +457,27 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 ### Pasos para instalar en las PCs del local
 1. Ejecutar `14_PRINT_SYSTEM.sql` en Supabase
 2. En Supabase Dashboard: Database → Replication → verificar que `print_jobs` está en `supabase_realtime`
-3. Compartir impresoras en Windows (nombres exactos: "Barra", "Minuta", "Parrilla Delivery")
-4. En PC Barra: copiar app, `pc-config.json` con `"pc": "BARRA"`, ejecutar `npm start` (o instalar .exe)
-5. En PC Cocina: copiar app, `pc-config.json` con `"pc": "COCINA"`, ejecutar
+3. Compartir impresoras en Windows (nombres EXACTOS case-sensitive: "Barra", "minuta", "parrilla delivery")
+4. En PC Barra: copiar .exe + `pc-config.json` de `PC BARRA/` a una carpeta (ej: `C:\7Tres7\`), ejecutar
+5. En PC Cocina: copiar .exe + `pc-config.json` de `PC COCINA/` a una carpeta, ejecutar
 6. Probar con botón "Imprimir Prueba" en la UI
 
-### Build del instalador .exe
+### Build del .exe portable
 ```bash
 cd 7tres7-print-app
 npm run build:win
-# Genera dist/7Tres7 Print Setup X.X.X.exe
+# Genera dist/7Tres7 Print X.X.X.exe (portable, ~67MB)
+```
+
+### Estructura pendrive (D:\737 app\)
+```
+737 app/
+├── 7Tres7 Print 1.0.1.exe      (v1.0.1, PowerShell inline, sin .ps1)
+├── INSTRUCCIONES.txt
+├── PC BARRA/
+│   └── pc-config.json          {"pc":"BARRA","printers":["Barra"]}
+└── PC COCINA/
+    └── pc-config.json          {"pc":"COCINA","printers":["minuta","parrilla delivery"]}
 ```
 
 ---
