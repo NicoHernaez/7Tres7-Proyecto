@@ -1,0 +1,45 @@
+{
+  "name": "7tres7-print",
+  "version": "1.0.0",
+  "description": "App de impresion termica para 7Tres7 Restaurante",
+  "author": "7Tres7",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "iconv-lite": "^0.6.3"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.7tres7.print",
+    "productName": "7Tres7 Print",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/**/*",
+      "assets/**/*",
+      "pc-config.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false
+    }
+  }
+}

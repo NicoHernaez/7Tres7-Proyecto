@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>7Tres7 Print</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      padding: 16px 20px 12px;
+      background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+      border-bottom: 2px solid #e94560;
+    }
+
+    .header h1 {
+      font-size: 22px;
+      color: #e94560;
+      letter-spacing: 1px;
+    }
+
+    .header .pc-name {
+      font-size: 13px;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    /* Status */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 14px 20px;
+      background: #16213e;
+      border-bottom: 1px solid #2a2a4a;
+    }
+
+    .status-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #ff6b6b;
+      transition: background 0.3s;
+    }
+
+    .status-dot.connected { background: #51cf66; }
+    .status-dot.connecting { background: #ffd43b; animation: pulse 1.5s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status-text {
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    /* Printers section */
+    .section {
+      padding: 12px 20px;
+    }
+
+    .section-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #666;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .printer-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .printer-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: #16213e;
+      border-radius: 8px;
+      border: 1px solid #2a2a4a;
+    }
+
+    .printer-name {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .printer-status {
+      font-size: 12px;
+      color: #51cf66;
+    }
+
+    /* Recent prints */
+    .recent {
+      flex: 1;
+      padding: 0 20px;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .recent-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: #16213e;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      font-size: 13px;
+      border-left: 3px solid #51cf66;
+    }
+
+    .recent-item.error {
+      border-left-color: #ff6b6b;
+    }
+
+    .recent-time {
+      color: #666;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .recent-text {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Actions */
+    .actions {
+      padding: 12px 20px;
+      border-top: 1px solid #2a2a4a;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      background: #e94560;
+      border: none;
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    .btn:hover { background: #ff6b7a; }
+    .btn:active { background: #c73350; }
+    .btn:disabled {
+      background: #444;
+      cursor: not-allowed;
+    }
+
+    /* Log (colapsable) */
+    .log-toggle {
+      padding: 6px 20px;
+      font-size: 11px;
+      color: #555;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .log-toggle:hover { color: #888; }
+
+    .log {
+      display: none;
+      max-height: 100px;
+      overflow-y: auto;
+      padding: 8px 12px;
+      margin: 0 20px 12px;
+      background: #0d0d1a;
+      border-radius: 6px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 11px;
+      color: #6a6a8a;
+    }
+
+    .log.show { display: block; }
+
+    .log-entry { padding: 1px 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>7Tres7 Print</h1>
+    <div class="pc-name" id="pcName">Cargando...</div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-dot connecting" id="statusDot"></div>
+    <span class="status-text" id="statusText">Conectando...</span>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Impresoras</div>
+    <div class="printer-list" id="printerList">
+      <!-- Se llena dinamicamente -->
+    </div>
+  </div>
+
+  <div class="section" style="padding-bottom: 4px;">
+    <div class="section-title">Ultimas impresiones</div>
+  </div>
+
+  <div class="recent" id="recentList">
+    <div style="color: #444; font-size: 13px; text-align: center; padding: 20px;">
+      Esperando pedidos...
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="btnTest" onclick="handleTestPrint()">
+      Imprimir Prueba
+    </button>
+  </div>
+
+  <div class="log-toggle" onclick="toggleLog()">Ver log tecnico</div>
+  <div class="log" id="logPanel"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
