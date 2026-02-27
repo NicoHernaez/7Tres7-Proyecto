@@ -1,4 +1,5 @@
 {
   "pc": "BARRA",
-  "_comment": "Cambiar a 'COCINA' para la PC de cocina. Opciones: BARRA | COCINA"
+  "printers": ["Barra"],
+  "_comment": "BARRA: printers=['Barra'] | COCINA: printers=['minuta','parrilla delivery']"
 }

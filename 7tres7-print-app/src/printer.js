@@ -1,4 +1,4 @@
-const { execFile } = require('child_process');
+const { execFile, exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -294,66 +294,64 @@ function formatNumber(num) {
 
 // =============================================
 // Enviar datos RAW a impresora Windows
-// (PowerShell inline via -EncodedCommand, sin archivos .ps1)
+// TODO el codigo PowerShell esta INLINE (NO usa archivos .ps1 externos)
+// Esto es critico para que funcione dentro del .exe empaquetado
 // =============================================
 
-// Construye el script PowerShell con WinAPI para imprimir raw bytes
+// Construye script PowerShell inline con WinAPI para imprimir raw bytes
+// Necesario para ESC/POS — Out-Printer no sirve porque manda texto, no raw
 function buildWinApiPrintScript(filePath, printerName) {
-  const f = filePath.replace(/'/g, "''");
+  const f = filePath.replace(/\\/g, '\\\\').replace(/'/g, "''");
   const p = printerName.replace(/'/g, "''");
-  // IMPORTANTE: "@ debe estar al inicio de linea (sin espacios antes)
-  return `Add-Type @"
-using System;
-using System.IO;
-using System.Runtime.InteropServices;
-public class RawPrinterHelper {
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    public struct DOCINFOW {
-        [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;
-        [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;
-        [MarshalAs(UnmanagedType.LPWStr)] public string pDataType;
-    }
-    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern bool OpenPrinter(string szPrinter, out IntPtr hPrinter, IntPtr pd);
-    [DllImport("winspool.drv", SetLastError = true)]
-    public static extern bool ClosePrinter(IntPtr hPrinter);
-    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern bool StartDocPrinter(IntPtr hPrinter, int level, ref DOCINFOW di);
-    [DllImport("winspool.drv", SetLastError = true)]
-    public static extern bool EndDocPrinter(IntPtr hPrinter);
-    [DllImport("winspool.drv", SetLastError = true)]
-    public static extern bool StartPagePrinter(IntPtr hPrinter);
-    [DllImport("winspool.drv", SetLastError = true)]
-    public static extern bool EndPagePrinter(IntPtr hPrinter);
-    [DllImport("winspool.drv", SetLastError = true)]
-    public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
-    public static bool SendRawData(string printerName, byte[] data) {
-        IntPtr hPrinter;
-        if (!OpenPrinter(printerName, out hPrinter, IntPtr.Zero)) {
-            Console.Error.WriteLine("ERROR: No se pudo abrir impresora '" + printerName + "'. Cod: " + Marshal.GetLastWin32Error());
-            return false;
-        }
-        DOCINFOW di = new DOCINFOW();
-        di.pDocName = "7Tres7 Print Job";
-        di.pDataType = "RAW";
-        if (!StartDocPrinter(hPrinter, 1, ref di)) { ClosePrinter(hPrinter); return false; }
-        if (!StartPagePrinter(hPrinter)) { EndDocPrinter(hPrinter); ClosePrinter(hPrinter); return false; }
-        IntPtr pUnmanagedBytes = Marshal.AllocCoTaskMem(data.Length);
-        Marshal.Copy(data, 0, pUnmanagedBytes, data.Length);
-        int bytesWritten;
-        bool ok = WritePrinter(hPrinter, pUnmanagedBytes, data.Length, out bytesWritten);
-        Marshal.FreeCoTaskMem(pUnmanagedBytes);
-        EndPagePrinter(hPrinter);
-        EndDocPrinter(hPrinter);
-        ClosePrinter(hPrinter);
-        return ok;
-    }
-}
-"@
-if (-not (Test-Path '${f}')) { Write-Error "Archivo no encontrado: ${f}"; exit 1 }
-` + "$bytes = [System.IO.File]::ReadAllBytes('" + f + "')\n" +
-    "$result = [RawPrinterHelper]::SendRawData('" + p + "', $bytes)\n" +
-    'if ($result) { Write-Output "OK"; exit 0 } else { Write-Error "FAIL"; exit 1 }';
+  // El heredoc @"..."@ DEBE empezar al inicio de linea
+  return [
+    'Add-Type @"',
+    'using System;',
+    'using System.IO;',
+    'using System.Runtime.InteropServices;',
+    'public class RawPrint {',
+    '  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]',
+    '  public struct DOCINFOW {',
+    '    [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;',
+    '    [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;',
+    '    [MarshalAs(UnmanagedType.LPWStr)] public string pDataType;',
+    '  }',
+    '  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]',
+    '  public static extern bool OpenPrinter(string s,out IntPtr h,IntPtr p);',
+    '  [DllImport("winspool.drv",SetLastError=true)]',
+    '  public static extern bool ClosePrinter(IntPtr h);',
+    '  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]',
+    '  public static extern bool StartDocPrinter(IntPtr h,int l,ref DOCINFOW d);',
+    '  [DllImport("winspool.drv",SetLastError=true)]',
+    '  public static extern bool EndDocPrinter(IntPtr h);',
+    '  [DllImport("winspool.drv",SetLastError=true)]',
+    '  public static extern bool StartPagePrinter(IntPtr h);',
+    '  [DllImport("winspool.drv",SetLastError=true)]',
+    '  public static extern bool EndPagePrinter(IntPtr h);',
+    '  [DllImport("winspool.drv",SetLastError=true)]',
+    '  public static extern bool WritePrinter(IntPtr h,IntPtr b,int c,out int w);',
+    '  public static bool Send(string name,byte[] data){',
+    '    IntPtr h;',
+    '    if(!OpenPrinter(name,out h,IntPtr.Zero)){',
+    '      Console.Error.WriteLine("No se pudo abrir: "+name+" err:"+Marshal.GetLastWin32Error());',
+    '      return false;',
+    '    }',
+    '    var di=new DOCINFOW();di.pDocName="7Tres7";di.pDataType="RAW";',
+    '    if(!StartDocPrinter(h,1,ref di)){ClosePrinter(h);return false;}',
+    '    if(!StartPagePrinter(h)){EndDocPrinter(h);ClosePrinter(h);return false;}',
+    '    IntPtr p=Marshal.AllocCoTaskMem(data.Length);',
+    '    Marshal.Copy(data,0,p,data.Length);',
+    '    int w;bool ok=WritePrinter(h,p,data.Length,out w);',
+    '    Marshal.FreeCoTaskMem(p);',
+    '    EndPagePrinter(h);EndDocPrinter(h);ClosePrinter(h);',
+    '    return ok;',
+    '  }',
+    '}',
+    '"@',
+    `$bytes=[System.IO.File]::ReadAllBytes('${f}')`,
+    `$ok=[RawPrint]::Send('${p}',$bytes)`,
+    'if($ok){Write-Output "OK";exit 0}else{Write-Error "FAIL";exit 1}',
+  ].join('\n');
 }
 
 function printRaw(printerName, dataBuffer) {
@@ -379,12 +377,19 @@ function printRaw(printerName, dataBuffer) {
       try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
 
       if (err) {
+        console.error('PowerShell WinAPI fallo, intentando copy /b...', stderr || err.message);
         // Fallback: copy /b a impresora compartida
-        printRawFallback(printerName, dataBuffer)
+        printRawCopyFallback(printerName, dataBuffer)
           .then(resolve)
-          .catch(() => reject(new Error(
-            `Fallo al imprimir en "${printerName}": ${stderr || err.message}`
-          )));
+          .catch(() => {
+            console.error('copy /b tambien fallo, intentando print...');
+            // Fallback 2: comando print de Windows
+            printRawPrintFallback(printerName, dataBuffer)
+              .then(resolve)
+              .catch((e2) => reject(new Error(
+                `Fallo al imprimir en "${printerName}": ${stderr || err.message}`
+              )));
+          });
         return;
       }
 
@@ -397,23 +402,29 @@ function printRaw(printerName, dataBuffer) {
   });
 }
 
-function printRawFallback(printerName, dataBuffer) {
+// Fallback 1: copy /b a impresora compartida
+function printRawCopyFallback(printerName, dataBuffer) {
   return new Promise((resolve, reject) => {
-    const tempFile = path.join(os.tmpdir(), `7t7_fb_${Date.now()}.bin`);
-
-    try {
-      fs.writeFileSync(tempFile, dataBuffer);
-    } catch (err) {
-      return reject(err);
-    }
+    const tempFile = path.join(os.tmpdir(), `7t7_fb1_${Date.now()}.bin`);
+    try { fs.writeFileSync(tempFile, dataBuffer); } catch (e) { return reject(e); }
 
     const cmd = `copy /b "${tempFile}" "\\\\${os.hostname()}\\${printerName}"`;
-    const { exec } = require('child_process');
-
     exec(cmd, { shell: 'cmd.exe', timeout: 10000 }, (err) => {
       try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
-      if (err) reject(err);
-      else resolve();
+      if (err) reject(err); else resolve();
+    });
+  });
+}
+
+// Fallback 2: comando print de Windows
+function printRawPrintFallback(printerName, dataBuffer) {
+  return new Promise((resolve, reject) => {
+    const tempFile = path.join(os.tmpdir(), `7t7_fb2_${Date.now()}.bin`);
+    try { fs.writeFileSync(tempFile, dataBuffer); } catch (e) { return reject(e); }
+
+    exec(`print /d:"${printerName}" "${tempFile}"`, { timeout: 10000 }, (err) => {
+      try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
+      if (err) reject(err); else resolve();
     });
   });
 }
