@@ -23,7 +23,7 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 
 ---
 
-## Estado Actual (25 Febrero 2026)
+## Estado Actual (27 Febrero 2026)
 
 ### ✅ Completado
 
@@ -46,6 +46,7 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 - ✅ **QZ Tray eliminado de Caja** (25 Feb 2026) — Todo código QZ Tray removido. Impresión 100% via Supabase trigger + Electron app.
 - ✅ **PWA App Usuario** (25 Feb 2026) — manifest.json, service worker, offline.html, 9 iconos, install banner (Android + iOS). Instalable desde celular.
 - ✅ **Horarios del negocio** (26 Feb 2026) — App usuario: indicador abierto/cerrado en welcome + banner en menú cuando cerrado. Admin: sección "Horarios" con toggle por día, turnos mediodía/noche, guardar a Supabase.
+- ✅ **Flujo WhatsApp invertido** (27 Feb 2026) — Antes: cliente enviaba WhatsApp al negocio. Ahora: cliente confirma → pedido en Supabase (pending) → pantalla "Pedido Recibido". Caja confirma → elige tiempo estimado (25/35/45/55 min) → WhatsApp al CLIENTE con confirmación + tiempo.
 
 ### ⏳ Pendiente
 
@@ -86,7 +87,7 @@ Ambas deployadas con `verify_jwt = false` (config en `supabase/config.toml`).
 5. App redirige al usuario a MercadoPago checkout
 6. Usuario paga
 7. MercadoPago notifica a `mp-webhook` → actualiza `orders.payment_status` + crea registro en `payments`
-8. Usuario vuelve a la app con `?status=success` → muestra confirmación → abre WhatsApp
+8. Usuario vuelve a la app con `?status=success` → muestra "Pedido Recibido" (sin WhatsApp, la confirmación va desde Caja)
 
 ### Credenciales
 - **Public Key:** `APP_USR-6eb41426-d39e-418b-9e30-2016506f983d` (en `business_config`)
@@ -250,14 +251,15 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 - **Todo lo demás** (sistema nuevo): `{ id, label, price, quantity, icon, category? }` — NO tiene `productId`
 - `updateCart()`, `confirmOrder()`, `updatePromoBanner()` manejan ambos formatos con `if (item.label)`
 
-### Checkout y pedidos (23 Feb)
+### Checkout y pedidos (27 Feb)
 - `saveOrderToSupabase()`: customers operations en try/catch propio (RLS puede bloquear). Si falla, el pedido se guarda sin customer_id e incluye tel+nombre en customer_notes.
 - Flan tiene opción "Solo" como default (no requiere seleccionar tipo)
+- **Flujo WhatsApp invertido (27 Feb):** `confirmOrder()` ya NO construye mensaje WhatsApp ni redirige. Solo guarda en Supabase y muestra `showSuccess(orderNumber)`. La notificación WhatsApp la envía la Caja al confirmar (negocio→cliente).
 
 ### Observaciones por producto (14 Feb)
 - `initProductObservations()` inyecta input en cada tarjeta
 - `getProductObs(productId)` lee y limpia
-- Se muestra en: carrito, pago, confirmación, WhatsApp, Supabase
+- Se muestra en: carrito, pago, confirmación, Supabase
 
 ### Punto de cocción (14 Feb)
 - Integrado en `renderParrillaCard()` para asado, ojo_de_bife, bife_de_chorizo
@@ -271,7 +273,7 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 - Mínimo 3 chars (antes 10), acepta "18 n 737"
 
 ### Indicaciones de entrega (14 Feb)
-- Campo `deliveryNotes` en registro, se envía en WhatsApp y Supabase
+- Campo `deliveryNotes` en registro, se envía en Supabase (y en WhatsApp desde Caja)
 
 ---
 
@@ -328,7 +330,7 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 6. **Cierre de caja:** Modal con resumen del día o por turno (Mediodía/Noche). Muestra totales, por tipo, por medio de pago, productos más vendidos, cancelados.
 7. **Staff/Cadetes:** CRUD de cadetes para asignar a deliveries. Modal de gestión.
 8. **Agregar items:** Modal para agregar productos a pedidos existentes.
-9. **Notificación WhatsApp:** Abre chat de WhatsApp con mensaje pre-armado al confirmar, marcar listo, o en camino.
+9. **Notificación WhatsApp (negocio→cliente):** Al confirmar, muestra selector de tiempo estimado (25/35/45/55 min), luego abre WhatsApp al cliente con confirmación + tiempo. También notifica al marcar listo o en camino.
 10. **Realtime:** Suscripción a cambios en `orders` via Supabase Realtime. Auto-refresh al recibir INSERT/UPDATE.
 
 ### Stats en header
@@ -347,6 +349,13 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 - Todo el código de QZ Tray fue removido. La impresión se maneja exclusivamente via Supabase trigger + app Electron.
 - `printOrder()` reemplazada por `reprintOrder()` que fuerza re-ejecución del trigger.
 - `printCierreCaja()` solo muestra toast informativo (el cierre se visualiza en pantalla).
+
+### Flujo WhatsApp invertido (27 Feb 2026)
+- **Antes:** Cliente confirmaba pedido → app abría WhatsApp para que el cliente enviara el pedido al negocio.
+- **Ahora:** Cliente confirma → pedido en Supabase (pending) → pantalla "Pedido Recibido, te contactamos".
+- **Caja:** Operador toca "Confirmar" → modal selector de tiempo (25/35/45/55 min) → `doConfirmOrder()` actualiza status → `notifyCustomerWhatsApp()` abre WhatsApp al CLIENTE con confirmación + tiempo estimado.
+- `confirmOrder(orderId)` ahora muestra el modal (`modal-tiempo`), `selectTime(min)` llama a `doConfirmOrder(orderId, min)`.
+- `notifyCustomerWhatsApp(orderId, event, estimatedMinutes)` — nuevo tercer parámetro para tiempo estimado en evento 'confirmed'.
 
 ---
 
