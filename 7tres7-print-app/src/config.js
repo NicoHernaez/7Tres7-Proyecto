@@ -17,6 +17,12 @@ const CONFIG_BARRA = {
   PRINTER_CODES: ['BARRA'],
 };
 
+const CONFIG_BARRA2 = {
+  PC_NAME: 'BARRA2',
+  PRINTERS: ['Barra'],
+  PRINTER_CODES: ['BARRA2'],
+};
+
 const CONFIG_COCINA = {
   PC_NAME: 'COCINA',
   PRINTERS: ['minuta', 'parrilla delivery'],
@@ -79,9 +85,12 @@ function detectConfig() {
         console.log(`[Config] Leido de: ${configFile}`, localConfig);
 
         if (localConfig.pc === 'COCINA') {
-          // Si el config trae printers custom, usarlos
           if (localConfig.printers) CONFIG_COCINA.PRINTERS = localConfig.printers;
           return CONFIG_COCINA;
+        }
+        if (localConfig.pc === 'BARRA2') {
+          if (localConfig.printers) CONFIG_BARRA2.PRINTERS = localConfig.printers;
+          return CONFIG_BARRA2;
         }
         if (localConfig.pc === 'BARRA') {
           if (localConfig.printers) CONFIG_BARRA.PRINTERS = localConfig.printers;
