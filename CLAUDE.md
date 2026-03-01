@@ -50,6 +50,7 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 - ✅ **Flujo WhatsApp invertido** (27 Feb 2026) — Antes: cliente enviaba WhatsApp al negocio. Ahora: cliente confirma → pedido en Supabase (pending) → pantalla "Pedido Recibido". Caja confirma → elige tiempo estimado (25/35/45/55 min) → WhatsApp al CLIENTE con confirmación + tiempo.
 - ✅ **Rediseño UI Caja — Dark Theme** (1 Mar 2026) — Glassmorphism, gradientes, glow buttons. Sub-tabs eliminadas → lista unificada con separadores de grupo por estado. Imágenes reales (Empanada-avatar.png, LOGO737.jpg).
 - ✅ **Flujo ENVIAR con cadetes** (1 Mar 2026) — Pedidos delivery en preparación muestran botón ENVIAR → modal selector de cadete → pasa a En Camino + notificación WhatsApp al cliente con nombre del cadete. En Camino muestra botón ENTREGADO → marca delivered.
+- ✅ **Print App v1.0.2 — Polling + Reconnect** (1 Mar 2026) — Causa raíz: canal Realtime hacía TIMED_OUT sin reconectar. Fix: polling backup cada 30s, reconexión en TIMED_OUT, dedup Realtime+polling, ventana pendientes 10min→1h, fix mapeo cooking_method/obs. Stress test: 10 pedidos simultáneos → 30 print_jobs → 20/20 Barra procesados OK.
 
 ### ⏳ Pendiente
 
@@ -57,7 +58,7 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 - [ ] **Test de pago real** — Hacer un pedido con MercadoPago desde otra cuenta y verificar que el webhook actualiza `orders.payment_status` y crea registro en `payments`
 
 #### Necesita hardware/presencia física
-- [ ] **Impresoras térmicas — Instalar** — SQL ya ejecutado. Falta: instalar app Electron en PC Barra y PC Cocina, verificar nombres de impresoras en Windows, probar con pedido real.
+- [ ] **Impresoras térmicas — Instalar en local** — App v1.0.2 lista en pendrive `D:\737 app\`. Falta: copiar .exe + pc-config.json a cada PC, verificar nombres de impresoras en Windows, probar con pedido real.
 - [ ] **Lucy WhatsApp** — Necesita teléfono del negocio para verificar número en Meta Cloud API
 
 #### Media prioridad
@@ -452,11 +453,12 @@ const groupDefs = [
 
 ---
 
-## Detalle Técnico: App Impresión Electron (25 Feb 2026)
+## Detalle Técnico: App Impresión Electron v1.0.2 (1 Mar 2026)
 
 ### Arquitectura
-- **Comunicación**: Supabase Realtime (NO WebSocket a Vercel — Vercel no soporta WS persistente)
-- **Flujo**: Caja confirma pedido → trigger SQL crea `print_jobs` row → Supabase Realtime notifica → Electron recibe → filtra items por categoría → imprime ESC/POS
+- **Comunicación**: Supabase Realtime + **Polling backup cada 30s** (v1.0.2)
+- **Flujo**: Caja confirma pedido → trigger SQL crea `print_jobs` row → Realtime notifica (o polling detecta) → Electron recibe → filtra items por categoría → imprime ESC/POS
+- **Bug encontrado (1 Mar 2026)**: Canal Realtime hacía `TIMED_OUT` y el código no reconectaba. Fix: manejar TIMED_OUT + polling backup
 - **Impresión**: Raw print via WinAPI (`winspool.drv WritePrinter`) usando PowerShell inline `-EncodedCommand` (NO archivos .ps1 externos). Fallback 1: `copy /b`. Fallback 2: `print /d:`.
 - **Codificación**: CP858 para caracteres españoles (ñ, á, é, etc.) via `iconv-lite`
 
@@ -474,31 +476,41 @@ const groupDefs = [
 - Default: BARRA
 - **Nombres CASE-SENSITIVE**: `Barra` (mayúscula), `minuta` y `parrilla delivery` (minúscula)
 
-### Formato `order_data` en `print_jobs`
+### Formato `raw_data` en `print_jobs` (snake_case del trigger)
 ```json
 {
-  "orderNumber": 123,
-  "tableOrDelivery": "Delivery - Calle 18 N 737",
-  "items": [{"name": "Emp. Carne", "category": "empanadas", "quantity": 6, "price": 1700, "subtotal": 10200, "notes": "Sin picante", "cooking": "horno"}],
-  "subtotal": 25000, "discount": 0, "deliveryFee": 1500, "total": 26500,
-  "paymentMethod": "cash", "customerNotes": "Tocar timbre"
+  "order_number": 123,
+  "delivery_type": "delivery",
+  "delivery_address": "Calle 18 N 737",
+  "items": [{"name": "Emp. Carne", "category": "empanadas", "quantity": 6, "price": 1700, "subtotal": 10200, "cooking_method": "horno", "obs": "Sin picante"}],
+  "subtotal": 25000, "discount": 0, "delivery_fee": 1500, "total": 26500,
+  "payment_method": "cash", "customer_notes": "Tocar timbre"
 }
 ```
+- `main.js` mapea snake_case → camelCase antes de pasar a `printer.js`
+- v1.0.2 fix: `cooking_method` y `obs` ahora se mapean correctamente
+
+### Robustez v1.0.2 (1 Mar 2026)
+- **Polling backup**: Cada 30s consulta Supabase por jobs pendientes (última hora)
+- **Reconnect TIMED_OUT**: Canal Realtime ahora reconecta en status TIMED_OUT (antes solo CLOSED/CHANNEL_ERROR)
+- **Dedup**: `processingJobs` Set evita que Realtime + polling procesen el mismo job
+- **Stress test OK**: 10 pedidos simultáneos → 30 jobs creados → 20/20 Barra procesados sin errores ni duplicados
 
 ### SQL ejecutado (25 Feb)
 - Categorías asignadas a impresoras: Empanadas/Pizzas/Minutas/Postres → Minuta, Restaurant → Parrilla Delivery, Bebidas → Barra
 - Barra como `printer_secondary_id` en todas las categorías (ticket completo)
 - RLS: anon SELECT + UPDATE en `print_jobs`, anon SELECT en `printers`
 - Realtime habilitado en `print_jobs`
-- Trigger `create_print_jobs_for_order()` reescrito: filtra items por category, 1 job/impresora + 1 full_ticket para Barra
+- Trigger `create_print_jobs_for_order()`: filtra items por category, 1 job/impresora + 1 full_ticket para Barra
 
 ### Pasos para instalar en las PCs del local
-1. Ejecutar `14_PRINT_SYSTEM.sql` en Supabase
-2. En Supabase Dashboard: Database → Replication → verificar que `print_jobs` está en `supabase_realtime`
+1. SQL `14_PRINT_SYSTEM.sql` ya ejecutado
+2. Realtime verificado en `print_jobs`
 3. Compartir impresoras en Windows (nombres EXACTOS case-sensitive: "Barra", "minuta", "parrilla delivery")
-4. En PC Barra: copiar .exe + `pc-config.json` de `PC BARRA/` a una carpeta (ej: `C:\7Tres7\`), ejecutar
-5. En PC Cocina: copiar .exe + `pc-config.json` de `PC COCINA/` a una carpeta, ejecutar
-6. Probar con botón "Imprimir Prueba" en la UI
+4. En PC Barra: copiar `7Tres7 Print 1.0.2.exe` + `pc-config.json` de `PC BARRA/` a una carpeta (ej: `C:\7Tres7\`), ejecutar
+5. En PC Cocina: copiar `7Tres7 Print 1.0.2.exe` + `pc-config.json` de `PC COCINA/` a una carpeta, ejecutar
+6. Verificar que diga "Conectado - Escuchando pedidos (Realtime + Polling)"
+7. Probar con botón "Imprimir Prueba" y luego con pedido real
 
 ### Build del .exe portable
 ```bash
@@ -510,7 +522,8 @@ npm run build:win
 ### Estructura pendrive (D:\737 app\)
 ```
 737 app/
-├── 7Tres7 Print 1.0.1.exe      (v1.0.1, PowerShell inline, sin .ps1)
+├── 7Tres7 Print 1.0.1.exe      (v1.0.1, obsoleto)
+├── 7Tres7 Print 1.0.2.exe      (v1.0.2, polling + reconnect)
 ├── INSTRUCCIONES.txt
 ├── PC BARRA/
 │   └── pc-config.json          {"pc":"BARRA","printers":["Barra"]}
