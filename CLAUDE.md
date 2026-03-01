@@ -23,7 +23,7 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 
 ---
 
-## Estado Actual (27 Febrero 2026)
+## Estado Actual (1 Marzo 2026)
 
 ### ✅ Completado
 
@@ -48,6 +48,8 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 - ✅ **PWA App Usuario** (25 Feb 2026) — manifest.json, service worker, offline.html, 9 iconos, install banner (Android + iOS). Instalable desde celular.
 - ✅ **Horarios del negocio** (26 Feb 2026) — App usuario: indicador abierto/cerrado en welcome + banner en menú cuando cerrado. Admin: sección "Horarios" con toggle por día, turnos mediodía/noche, guardar a Supabase.
 - ✅ **Flujo WhatsApp invertido** (27 Feb 2026) — Antes: cliente enviaba WhatsApp al negocio. Ahora: cliente confirma → pedido en Supabase (pending) → pantalla "Pedido Recibido". Caja confirma → elige tiempo estimado (25/35/45/55 min) → WhatsApp al CLIENTE con confirmación + tiempo.
+- ✅ **Rediseño UI Caja — Dark Theme** (1 Mar 2026) — Glassmorphism, gradientes, glow buttons. Sub-tabs eliminadas → lista unificada con separadores de grupo por estado. Imágenes reales (Empanada-avatar.png, LOGO737.jpg).
+- ✅ **Flujo ENVIAR con cadetes** (1 Mar 2026) — Pedidos delivery en preparación muestran botón ENVIAR → modal selector de cadete → pasa a En Camino + notificación WhatsApp al cliente con nombre del cadete. En Camino muestra botón ENTREGADO → marca delivered.
 
 ### ⏳ Pendiente
 
@@ -308,7 +310,7 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 
 ---
 
-## Detalle Técnico: App Caja (25 Feb 2026)
+## Detalle Técnico: App Caja (1 Mar 2026)
 
 ### Ubicación y deploy
 - **Repo local:** `C:\Users\Nico\7tres7-caja`
@@ -321,17 +323,39 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 - Emails autorizados: `nicohernaez22@gmail.com`, `lumimartin24@gmail.com`, `martinludmila300@gmail.com`
 - Constante `AUTHORIZED_EMAILS` valida acceso post-login
 
+### UI — Dark Theme (1 Mar 2026)
+- **Glassmorphism:** `backdrop-blur`, `bg-white/5`, bordes `border-white/10`
+- **Glow buttons:** `btn-glow-green/blue/purple/orange/urgent` con gradientes + box-shadow
+- **`btn-glow-urgent`:** rojo/naranja + `urgentPulse` animation (scale + glow) para CONFIRMAR
+- **Status badges:** `status-badge-confirmed/preparing/ready/delivering` con colores por estado
+- **Status strips:** Barra vertical izquierda en cada order card con gradiente por estado
+- **Scrollbar dark:** thumb blanco transparente
+- **Imágenes:** `Empanada-avatar.png` (login + header), `LOGO737.jpg` (disponible)
+
 ### Funcionalidades principales
-1. **Gestión de pedidos (master-detail):** Lista izquierda (58%) + detalle derecho (42%). Filtros por tipo (Todos/Mostrador/Delivery) y estado (Pendiente/Confirmado/Listo/En camino/Entregado/Cancelado). Búsqueda por # o nombre.
-2. **Flujo de estados:** Pendiente → Confirmado → Listo → En camino (delivery) → Entregado. Cancelar disponible en cualquier momento con motivo.
-3. **Impresión:** Al confirmar pedido, el trigger SQL `create_print_jobs_for_order()` crea print_jobs automáticamente. La app Electron los recoge via Realtime. Botón "Reimprimir" disponible en el detalle (usa `reprintOrder()`).
-4. **Medios de pago:** Efectivo, Débito, Crédito, MercadoPago, QR, Prepaga, Transferencia. Editable desde el detalle.
-5. **Descuentos:** Aplicar descuento % o monto fijo al pedido, con motivo.
-6. **Cierre de caja:** Modal con resumen del día o por turno (Mediodía/Noche). Muestra totales, por tipo, por medio de pago, productos más vendidos, cancelados.
-7. **Staff/Cadetes:** CRUD de cadetes para asignar a deliveries. Modal de gestión.
-8. **Agregar items:** Modal para agregar productos a pedidos existentes.
-9. **Notificación WhatsApp (negocio→cliente):** Al confirmar, muestra selector de tiempo estimado (25/35/45/55 min), luego abre WhatsApp al cliente con confirmación + tiempo. También notifica al marcar listo o en camino.
-10. **Realtime:** Suscripción a cambios en `orders` via Supabase Realtime. Auto-refresh al recibir INSERT/UPDATE.
+1. **Gestión de pedidos (master-detail):** Lista izquierda (58%) + detalle derecho (42%). Mother tabs: Todos/Mostrador/Delivery/Salon. Búsqueda por # o nombre.
+2. **Lista unificada con grupos:** Sub-tabs eliminadas. Pedidos se muestran en una sola lista con separadores de grupo: Pendientes, En Preparacion, En Camino, Entregados, Cancelados. Cada grupo con conteo.
+3. **Flujo de estados (delivery):** Pendiente → CONFIRMAR → En Preparación → ENVIAR (modal cadete) → En Camino → ENTREGADO → Entregados.
+4. **Flujo de estados (mostrador):** Pendiente → CONFIRMAR → En Preparación → MARCAR ENTREGADO → Entregados.
+5. **Flujo ENVIAR con cadetes (1 Mar 2026):** `openEnviarModal()` → modal con lista de cadetes desde `staffCache` → `enviarConCadete(name)` actualiza status a `delivering`, asigna `assigned_to`, notifica cliente via WhatsApp con nombre del cadete.
+6. **Impresión:** Trigger SQL `create_print_jobs_for_order()` al confirmar. Botón "Reimprimir" en detalle.
+7. **Medios de pago:** Efectivo, Débito, Crédito, MercadoPago, QR, Prepaga, Transferencia.
+8. **Descuentos:** % o monto fijo con motivo.
+9. **Cierre de caja:** Modal con resumen por día/turno.
+10. **Staff/Cadetes:** CRUD de cadetes. Modal de gestión.
+11. **Agregar items:** Modal para agregar productos a pedidos existentes.
+12. **Notificación WhatsApp (negocio→cliente):** Confirmar (tiempo estimado), Enviar (nombre cadete), Entregado.
+13. **Realtime:** Supabase Realtime en `orders`. Auto-refresh al recibir INSERT/UPDATE.
+
+### Quick action buttons en la lista
+| Estado | Tipo | Botón | Acción |
+|--------|------|-------|--------|
+| pending | todos | **CONFIRMAR** (btn-glow-urgent, pulsa) | `confirmOrder()` → modal tiempo |
+| confirmed/preparing | delivery | **ENVIAR** (btn-glow-blue) | `openEnviarModal()` → modal cadete |
+| confirmed/preparing | mostrador | PREPARANDO (badge) | — |
+| delivering | delivery | **ENTREGADO** (btn-glow-green) | `markDelivered()` |
+| delivered/ready | todos | — (opacity 50%) | — |
+| cancelled | todos | — (opacity 50%, tachado) | — |
 
 ### Stats en header
 - Revenue del día, cantidad de pedidos, ticket promedio
@@ -340,22 +364,36 @@ SUPABASE_ACCESS_TOKEN=<token> npx supabase functions deploy mp-webhook --no-veri
 ### Variables de estado principales
 - `allOrders[]` — todos los pedidos del día
 - `selectedOrderId` — pedido seleccionado en el detalle
-- `motherTab` — filtro por tipo (todos/mostrador/delivery)
-- `subTab` — filtro por estado (pending/confirmed/ready/delivering/delivered/cancelled)
+- `motherTab` — filtro por tipo (todos/mostrador/delivery/salon)
 - `staffCache[]` — cadetes cargados
 - `productsCache[]` — productos para modal "Agregar item"
+- `enviarOrderId` — orderId para modal de enviar con cadete
+
+### Status priority sort
+```javascript
+const statusPriority = { pending: 0, preparing: 1, confirmed: 2, delivering: 3, ready: 4, delivered: 4, cancelled: 5 };
+```
+
+### Group definitions
+```javascript
+const groupDefs = [
+    { key: 'pending', label: 'Pendientes', filter: o => o.status === 'pending' },
+    { key: 'preparing', label: 'En Preparacion', filter: o => o.status === 'preparing' || o.status === 'confirmed' },
+    { key: 'delivering', label: 'En Camino', filter: o => o.status === 'delivering' },
+    { key: 'delivered', label: 'Entregados', filter: o => o.status === 'delivered' || o.status === 'ready' },
+    { key: 'cancelled', label: 'Cancelados', filter: o => o.status === 'cancelled' }
+];
+```
+
+### Flujo WhatsApp (negocio→cliente)
+- `notifyCustomerWhatsApp(orderId, event, estimatedMinutes, cadeteName)` — 4 parámetros
+- **confirmed:** "Tu pedido #X fue *confirmado*. Tiempo estimado: *Y minutos*."
+- **delivering:** "Tu pedido #X ya *salio en camino*! Lo lleva *CadeteName*."
+- **delivered:** "Tu pedido #X fue *entregado*."
 
 ### QZ Tray: ELIMINADO (25 Feb 2026)
-- Todo el código de QZ Tray fue removido. La impresión se maneja exclusivamente via Supabase trigger + app Electron.
-- `printOrder()` reemplazada por `reprintOrder()` que fuerza re-ejecución del trigger.
-- `printCierreCaja()` solo muestra toast informativo (el cierre se visualiza en pantalla).
-
-### Flujo WhatsApp invertido (27 Feb 2026)
-- **Antes:** Cliente confirmaba pedido → app abría WhatsApp para que el cliente enviara el pedido al negocio.
-- **Ahora:** Cliente confirma → pedido en Supabase (pending) → pantalla "Pedido Recibido, te contactamos".
-- **Caja:** Operador toca "Confirmar" → modal selector de tiempo (25/35/45/55 min) → `doConfirmOrder()` actualiza status → `notifyCustomerWhatsApp()` abre WhatsApp al CLIENTE con confirmación + tiempo estimado.
-- `confirmOrder(orderId)` ahora muestra el modal (`modal-tiempo`), `selectTime(min)` llama a `doConfirmOrder(orderId, min)`.
-- `notifyCustomerWhatsApp(orderId, event, estimatedMinutes)` — nuevo tercer parámetro para tiempo estimado en evento 'confirmed'.
+- Impresión 100% via Supabase trigger + Electron app.
+- `reprintOrder()` fuerza re-ejecución del trigger.
 
 ---
 

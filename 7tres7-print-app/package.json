@@ -1,6 +1,6 @@
 {
   "name": "7tres7-print",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "App de impresion termica para 7Tres7 Restaurante",
   "author": "7Tres7",
   "main": "main.js",

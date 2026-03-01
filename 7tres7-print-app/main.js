@@ -90,8 +90,8 @@ async function handlePrintJob(job) {
         items: (data.items || []).map((item) => ({
           name: item.name || item.label || 'Item',
           quantity: item.quantity || 1,
-          cooking: item.cooking || item.cookingMethod || null,
-          notes: item.notes || item.observations || null,
+          cooking: item.cooking || item.cooking_method || item.cookingMethod || null,
+          notes: item.notes || item.obs || item.observations || null,
         })),
       });
     }

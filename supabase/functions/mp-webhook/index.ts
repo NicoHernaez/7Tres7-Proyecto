@@ -30,10 +30,27 @@ serve(async (req) => {
     // Crear cliente Supabase con service role (bypass RLS)
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-    // Obtener datos de la notificacion
+    // Obtener datos de la notificacion - soportar AMBOS formatos:
+    // 1. IPN (query params): ?topic=payment&id=12345
+    // 2. Webhooks v2 (POST body): {"type":"payment","data":{"id":"12345"}}
     const url = new URL(req.url)
-    const topic = url.searchParams.get('topic') || url.searchParams.get('type')
-    const id = url.searchParams.get('id') || url.searchParams.get('data.id')
+    let topic = url.searchParams.get('topic') || url.searchParams.get('type')
+    let id = url.searchParams.get('id')
+
+    // Si no hay datos en query params, intentar leer del body (formato Webhooks v2)
+    if (!topic || !id) {
+      try {
+        const body = await req.json()
+        if (body.type) topic = body.type
+        if (body.data?.id) id = body.data.id.toString()
+        // Algunos webhooks envían action como "payment.created", "payment.updated"
+        if (!topic && body.action?.startsWith('payment')) topic = 'payment'
+      } catch (_e) {
+        // Body vacío o no es JSON — continuar con query params
+      }
+    }
+
+    console.log('Webhook recibido:', { topic, id, method: req.method })
 
     // MercadoPago envia notificaciones de diferentes tipos
     // Solo nos interesan las de payment

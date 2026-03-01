@@ -5,11 +5,16 @@ let supabase = null;
 let channel = null;
 let callbacks = {};
 let reconnectTimer = null;
+let pollingTimer = null;
+const POLLING_INTERVAL = 30000; // 30 segundos
 
 // Mapa printer_id (UUID) -> printer name (Windows)
 // Se carga desde Supabase al iniciar
 let myPrinterIds = new Set();
 let printerIdToName = {};
+
+// Evitar procesar el mismo job dos veces (Realtime + polling)
+let processingJobs = new Set();
 
 // =============================================
 // Inicializar cliente Supabase
@@ -91,11 +96,11 @@ async function startListening(cbs) {
     )
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {
-        log('Conectado - Escuchando pedidos');
+        log('Conectado - Escuchando pedidos (Realtime + Polling)');
         notifyStatus('connected');
         clearReconnectTimer();
-      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-        log(`Desconectado (${status}). Reintentando...`);
+      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        log(`Desconectado (${status}). Reintentando en 5s...`);
         notifyStatus('disconnected');
         scheduleReconnect();
       } else {
@@ -105,6 +110,9 @@ async function startListening(cbs) {
 
   // Verificar si hay jobs pendientes al iniciar
   checkPendingJobs();
+
+  // Polling de backup: revisa cada 30s por si Realtime falla
+  startPolling();
 }
 
 // =============================================
@@ -121,9 +129,15 @@ async function handleNewJob(job) {
   }
 
   // Ignorar si ya esta impreso
-  if (job.status === 'printed' || job.status === 'completed') {
+  if (job.status === 'printed' || job.status === 'completed' || job.status === 'printing') {
     return;
   }
+
+  // Dedup: evitar procesar el mismo job dos veces (Realtime + polling)
+  if (processingJobs.has(job.id)) {
+    return;
+  }
+  processingJobs.add(job.id);
 
   const printerName = printerIdToName[job.printer_id] || 'Desconocida';
   const orderNum = job.raw_data.order_number || '?';
@@ -160,6 +174,8 @@ async function handleNewJob(job) {
         attempts: (job.attempts || 0) + 1,
       });
     } catch (e) { /* ignore */ }
+  } finally {
+    processingJobs.delete(job.id);
   }
 }
 
@@ -182,13 +198,14 @@ async function checkPendingJobs() {
   if (!supabase || myPrinterIds.size === 0) return;
 
   try {
-    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    // Buscar jobs pendientes de la ultima hora
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const myIds = Array.from(myPrinterIds);
 
     const { data: pendingJobs, error } = await supabase
       .from('print_jobs')
       .select('*')
-      .gte('created_at', tenMinAgo)
+      .gte('created_at', oneHourAgo)
       .in('status', ['pending', 'failed'])
       .in('printer_id', myIds)
       .lt('attempts', 3)
@@ -201,13 +218,31 @@ async function checkPendingJobs() {
     }
 
     if (pendingJobs && pendingJobs.length > 0) {
-      log(`${pendingJobs.length} job(s) pendiente(s) encontrado(s)`);
+      log(`Polling: ${pendingJobs.length} job(s) pendiente(s) encontrado(s)`);
       for (const job of pendingJobs) {
         await handleNewJob(job);
       }
     }
   } catch (err) {
     log(`Error en checkPendingJobs: ${err.message}`);
+  }
+}
+
+// =============================================
+// Polling de backup (cada 30s)
+// =============================================
+function startPolling() {
+  stopPolling();
+  log(`Polling activo cada ${POLLING_INTERVAL / 1000}s`);
+  pollingTimer = setInterval(() => {
+    checkPendingJobs();
+  }, POLLING_INTERVAL);
+}
+
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer);
+    pollingTimer = null;
   }
 }
 
@@ -235,6 +270,7 @@ function clearReconnectTimer() {
 // =============================================
 function stopListening() {
   clearReconnectTimer();
+  stopPolling();
   if (channel && supabase) {
     supabase.removeChannel(channel);
     channel = null;

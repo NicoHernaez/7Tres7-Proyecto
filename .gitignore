@@ -5,3 +5,14 @@ admin-panel/
 # OS
 .DS_Store
 Thumbs.db
+
+# Build artifacts
+7tres7-print-app/dist/
+7tres7-print-app/node_modules/
+
+# Secrets
+.env.local
+.env
+
+# Claude internal
+.claude/skills/
