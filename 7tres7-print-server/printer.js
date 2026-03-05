@@ -1,0 +1,375 @@
+const { execFile, exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+let iconv;
+try {
+  iconv = require('iconv-lite');
+} catch (e) {
+  iconv = null;
+}
+
+// =============================================
+// ESC/POS Constants
+// =============================================
+const ESC = 0x1B;
+const GS = 0x1D;
+
+const CMD = {
+  INIT: Buffer.from([ESC, 0x40]),
+  CODEPAGE_PC858: Buffer.from([ESC, 0x74, 19]),
+  CODEPAGE_PC850: Buffer.from([ESC, 0x74, 2]),
+  ALIGN_LEFT: Buffer.from([ESC, 0x61, 0x00]),
+  ALIGN_CENTER: Buffer.from([ESC, 0x61, 0x01]),
+  ALIGN_RIGHT: Buffer.from([ESC, 0x61, 0x02]),
+  FONT_NORMAL: Buffer.from([ESC, 0x21, 0x00]),
+  FONT_BOLD: Buffer.from([ESC, 0x21, 0x08]),
+  FONT_DOUBLE_HEIGHT: Buffer.from([ESC, 0x21, 0x10]),
+  FONT_DOUBLE_WIDTH: Buffer.from([ESC, 0x21, 0x20]),
+  FONT_BIG: Buffer.from([ESC, 0x21, 0x30]),
+  FONT_BIG_BOLD: Buffer.from([ESC, 0x21, 0x38]),
+  CUT: Buffer.from([GS, 0x56, 0x00]),
+  CUT_PARTIAL: Buffer.from([GS, 0x56, 0x01]),
+  FEED_3: Buffer.from([0x0A, 0x0A, 0x0A]),
+  FEED_5: Buffer.from([0x0A, 0x0A, 0x0A, 0x0A, 0x0A]),
+};
+
+// =============================================
+// Encode text to CP858 (Spanish support)
+// =============================================
+function encodeText(str) {
+  if (iconv) {
+    return iconv.encode(str, 'cp858');
+  }
+  const CP858_MAP = {
+    '\u00e1': 0xA0, '\u00e9': 0x82, '\u00ed': 0xA1, '\u00f3': 0xA2,
+    '\u00fa': 0xA3, '\u00f1': 0xA4, '\u00d1': 0xA5, '\u00bf': 0xA8,
+    '\u00a1': 0xAD, '\u00fc': 0x81, '\u00c1': 0xB5, '\u00c9': 0x90,
+    '\u00cd': 0xD6, '\u00d3': 0xE0, '\u00da': 0xE9,
+  };
+  const buf = [];
+  for (const ch of str) {
+    const code = ch.charCodeAt(0);
+    if (CP858_MAP[ch]) {
+      buf.push(CP858_MAP[ch]);
+    } else if (code < 128) {
+      buf.push(code);
+    } else {
+      buf.push(0x3F);
+    }
+  }
+  return Buffer.from(buf);
+}
+
+// =============================================
+// Ticket Builder
+// =============================================
+class TicketBuilder {
+  constructor() {
+    this.parts = [];
+    this.raw(CMD.INIT);
+    this.raw(CMD.CODEPAGE_PC858);
+  }
+
+  raw(buf) { this.parts.push(buf); return this; }
+  text(str) { this.parts.push(encodeText(str)); return this; }
+  line(str) { return this.text(str + '\n'); }
+  emptyLine() { this.parts.push(Buffer.from([0x0A])); return this; }
+  separator(char = '-', width = 32) { return this.line(char.repeat(width)); }
+  doubleSeparator(width = 32) { return this.separator('=', width); }
+
+  columns(left, right, width = 32) {
+    const maxLeft = width - right.length - 1;
+    const leftStr = left.length > maxLeft ? left.substring(0, maxLeft) : left;
+    const padding = width - leftStr.length - right.length;
+    return this.line(leftStr + ' '.repeat(Math.max(1, padding)) + right);
+  }
+
+  build() { return Buffer.concat(this.parts); }
+}
+
+// =============================================
+// Generar comanda de cocina
+// =============================================
+function buildKitchenTicket(data) {
+  const { orderNumber, tableOrDelivery, items } = data;
+  const t = new TicketBuilder();
+
+  t.raw(CMD.ALIGN_CENTER);
+  t.raw(CMD.FONT_BIG_BOLD);
+  t.line(`PEDIDO #${orderNumber}`);
+
+  t.raw(CMD.FONT_DOUBLE_HEIGHT);
+  t.line(tableOrDelivery || '');
+
+  t.raw(CMD.FONT_NORMAL);
+  t.line(new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
+
+  t.raw(CMD.ALIGN_LEFT);
+  t.separator();
+
+  for (const item of items) {
+    t.raw(CMD.FONT_BIG_BOLD);
+    t.line(`${item.quantity}x ${item.name}`);
+    t.raw(CMD.FONT_NORMAL);
+
+    if (item.cooking) {
+      t.line(`   Coccion: ${item.cooking}`);
+    }
+    if (item.notes) {
+      t.line(`   -> ${item.notes}`);
+    }
+  }
+
+  t.separator();
+  t.raw(CMD.ALIGN_CENTER);
+  t.raw(CMD.FONT_NORMAL);
+  t.line(new Date().toLocaleString('es-AR'));
+  t.raw(CMD.FEED_3);
+  t.raw(CMD.CUT);
+
+  return t.build();
+}
+
+// =============================================
+// Generar ticket completo (para Barra)
+// =============================================
+function buildFullTicket(order) {
+  const t = new TicketBuilder();
+
+  t.raw(CMD.ALIGN_CENTER);
+  t.raw(CMD.FONT_BIG_BOLD);
+  t.line('7TRES7');
+  t.raw(CMD.FONT_NORMAL);
+  t.line('Restaurant & Delivery');
+  t.line('Calle 18 N 737 - Gral. Pico');
+  t.line('Tel: 2302 51-5656');
+  t.doubleSeparator();
+
+  t.raw(CMD.ALIGN_LEFT);
+  t.raw(CMD.FONT_BOLD);
+  t.line(`Pedido: #${order.orderNumber}`);
+  t.raw(CMD.FONT_NORMAL);
+  t.line(order.tableOrDelivery || '');
+  t.line(`Fecha: ${new Date().toLocaleString('es-AR')}`);
+
+  if (order.customerName) t.line(`Cliente: ${order.customerName}`);
+  if (order.customerPhone) t.line(`Tel: ${order.customerPhone}`);
+
+  t.separator();
+
+  for (const item of order.items) {
+    const name = `${item.quantity}x ${item.name}`;
+    const price = `$${formatNumber(item.subtotal || item.price * item.quantity)}`;
+    t.columns(name, price);
+    if (item.cooking) t.line(`   ${item.cooking}`);
+    if (item.notes) t.line(`   ${item.notes}`);
+  }
+
+  t.separator();
+  t.columns('Subtotal:', `$${formatNumber(order.subtotal)}`);
+
+  if (order.discount > 0) {
+    t.columns('Descuento:', `-$${formatNumber(order.discount)}`);
+    if (order.discountReason) t.line(`   (${order.discountReason})`);
+  }
+
+  if (order.deliveryFee > 0) {
+    t.columns('Envio:', `$${formatNumber(order.deliveryFee)}`);
+  }
+
+  t.doubleSeparator();
+  t.raw(CMD.FONT_BIG_BOLD);
+  t.columns('TOTAL:', `$${formatNumber(order.total)}`, 20);
+  t.raw(CMD.FONT_NORMAL);
+  t.line(`Pago: ${order.paymentMethod || 'Efectivo'}`);
+  t.doubleSeparator();
+
+  if (order.deliveryNotes) {
+    t.raw(CMD.FONT_BOLD);
+    t.line(`Notas: ${order.deliveryNotes}`);
+    t.raw(CMD.FONT_NORMAL);
+  }
+
+  t.emptyLine();
+  t.raw(CMD.ALIGN_CENTER);
+  t.line('Gracias por tu compra!');
+  t.line('Instagram: @737resto');
+  t.raw(CMD.FEED_5);
+  t.raw(CMD.CUT);
+
+  return t.build();
+}
+
+// =============================================
+// Generar ticket de prueba
+// =============================================
+function buildTestTicket(printerName) {
+  const t = new TicketBuilder();
+
+  t.raw(CMD.ALIGN_CENTER);
+  t.raw(CMD.FONT_BIG_BOLD);
+  t.line('7TRES7 PRINT');
+  t.raw(CMD.FONT_NORMAL);
+  t.doubleSeparator();
+  t.line('PRUEBA DE IMPRESION');
+  t.separator();
+  t.line(`Impresora: ${printerName}`);
+  t.line(`Fecha: ${new Date().toLocaleString('es-AR')}`);
+  t.line(`PC: ${os.hostname()}`);
+  t.line(`Servidor: v2.0.0 (Express)`);
+  t.separator();
+  t.line('Caracteres especiales:');
+  t.line('aeiou AEIOU');
+  t.line('$1.234,56 - 10%');
+  t.doubleSeparator();
+  t.line('OK - Impresion exitosa');
+  t.raw(CMD.FEED_3);
+  t.raw(CMD.CUT);
+
+  return t.build();
+}
+
+function formatNumber(num) {
+  if (num == null) return '0';
+  return Number(num).toLocaleString('es-AR');
+}
+
+// =============================================
+// Enviar datos RAW a impresora Windows
+// PowerShell inline con WinAPI (NO usa archivos .ps1)
+// =============================================
+function buildWinApiPrintScript(filePath, printerName) {
+  const f = filePath.replace(/\\/g, '\\\\').replace(/'/g, "''");
+  const p = printerName.replace(/'/g, "''");
+  return [
+    'Add-Type @"',
+    'using System;',
+    'using System.IO;',
+    'using System.Runtime.InteropServices;',
+    'public class RawPrint {',
+    '  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]',
+    '  public struct DOCINFOW {',
+    '    [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;',
+    '    [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;',
+    '    [MarshalAs(UnmanagedType.LPWStr)] public string pDataType;',
+    '  }',
+    '  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]',
+    '  public static extern bool OpenPrinter(string s,out IntPtr h,IntPtr p);',
+    '  [DllImport("winspool.drv",SetLastError=true)]',
+    '  public static extern bool ClosePrinter(IntPtr h);',
+    '  [DllImport("winspool.drv",CharSet=CharSet.Unicode,SetLastError=true)]',
+    '  public static extern bool StartDocPrinter(IntPtr h,int l,ref DOCINFOW d);',
+    '  [DllImport("winspool.drv",SetLastError=true)]',
+    '  public static extern bool EndDocPrinter(IntPtr h);',
+    '  [DllImport("winspool.drv",SetLastError=true)]',
+    '  public static extern bool StartPagePrinter(IntPtr h);',
+    '  [DllImport("winspool.drv",SetLastError=true)]',
+    '  public static extern bool EndPagePrinter(IntPtr h);',
+    '  [DllImport("winspool.drv",SetLastError=true)]',
+    '  public static extern bool WritePrinter(IntPtr h,IntPtr b,int c,out int w);',
+    '  public static bool Send(string name,byte[] data){',
+    '    IntPtr h;',
+    '    if(!OpenPrinter(name,out h,IntPtr.Zero)){',
+    '      Console.Error.WriteLine("No se pudo abrir: "+name+" err:"+Marshal.GetLastWin32Error());',
+    '      return false;',
+    '    }',
+    '    var di=new DOCINFOW();di.pDocName="7Tres7";di.pDataType="RAW";',
+    '    if(!StartDocPrinter(h,1,ref di)){ClosePrinter(h);return false;}',
+    '    if(!StartPagePrinter(h)){EndDocPrinter(h);ClosePrinter(h);return false;}',
+    '    IntPtr p=Marshal.AllocCoTaskMem(data.Length);',
+    '    Marshal.Copy(data,0,p,data.Length);',
+    '    int w;bool ok=WritePrinter(h,p,data.Length,out w);',
+    '    Marshal.FreeCoTaskMem(p);',
+    '    EndPagePrinter(h);EndDocPrinter(h);ClosePrinter(h);',
+    '    return ok;',
+    '  }',
+    '}',
+    '"@',
+    `$bytes=[System.IO.File]::ReadAllBytes('${f}')`,
+    `$ok=[RawPrint]::Send('${p}',$bytes)`,
+    'if($ok){Write-Output "OK";exit 0}else{Write-Error "FAIL";exit 1}',
+  ].join('\n');
+}
+
+function printRaw(printerName, dataBuffer) {
+  return new Promise((resolve, reject) => {
+    const tempFile = path.join(os.tmpdir(), `7t7_print_${Date.now()}.bin`);
+
+    try {
+      fs.writeFileSync(tempFile, dataBuffer);
+    } catch (err) {
+      return reject(new Error(`No se pudo escribir archivo temporal: ${err.message}`));
+    }
+
+    const psScript = buildWinApiPrintScript(tempFile, printerName);
+    const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+
+    execFile('powershell.exe', [
+      '-ExecutionPolicy', 'Bypass',
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand', encoded,
+    ], { timeout: 15000 }, (err, stdout, stderr) => {
+      try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
+
+      if (err) {
+        console.error(`[WARN] PowerShell WinAPI fallo en "${printerName}", intentando copy /b...`);
+        printRawCopyFallback(printerName, dataBuffer)
+          .then(resolve)
+          .catch(() => {
+            console.error(`[WARN] copy /b fallo en "${printerName}", intentando print /d:...`);
+            printRawPrintFallback(printerName, dataBuffer)
+              .then(resolve)
+              .catch(() => reject(new Error(
+                `Fallo al imprimir en "${printerName}": ${stderr || err.message}`
+              )));
+          });
+        return;
+      }
+
+      if (stdout.trim() === 'OK') {
+        resolve();
+      } else {
+        reject(new Error(`Respuesta inesperada: ${stdout} ${stderr}`));
+      }
+    });
+  });
+}
+
+function printRawCopyFallback(printerName, dataBuffer) {
+  return new Promise((resolve, reject) => {
+    const tempFile = path.join(os.tmpdir(), `7t7_fb1_${Date.now()}.bin`);
+    try { fs.writeFileSync(tempFile, dataBuffer); } catch (e) { return reject(e); }
+
+    const cmd = `copy /b "${tempFile}" "\\\\${os.hostname()}\\${printerName}"`;
+    exec(cmd, { shell: 'cmd.exe', timeout: 10000 }, (err) => {
+      try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
+      if (err) reject(err); else resolve();
+    });
+  });
+}
+
+function printRawPrintFallback(printerName, dataBuffer) {
+  return new Promise((resolve, reject) => {
+    const tempFile = path.join(os.tmpdir(), `7t7_fb2_${Date.now()}.bin`);
+    try { fs.writeFileSync(tempFile, dataBuffer); } catch (e) { return reject(e); }
+
+    exec(`print /d:"${printerName}" "${tempFile}"`, { timeout: 10000 }, (err) => {
+      try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
+      if (err) reject(err); else resolve();
+    });
+  });
+}
+
+// =============================================
+// API publica
+// =============================================
+module.exports = {
+  printRaw,
+  buildKitchenTicket,
+  buildFullTicket,
+  buildTestTicket,
+  formatNumber,
+};
