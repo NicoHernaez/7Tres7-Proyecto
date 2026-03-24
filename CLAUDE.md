@@ -8,7 +8,7 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 3. **App Caja** - Panel de caja para gestionar pedidos en el local
 
 **URLs de produccion:**
-- App Usuario: https://7tres7-online.vercel.app
+- App Usuario: https://7tres7.com (dominio propio) | legacy: https://7tres7-online.vercel.app
 - Admin Panel: https://7-tres7-admin.vercel.app
 - App Caja: https://7-tres7-caja.vercel.app
 
@@ -51,14 +51,14 @@ Sistema de pedidos online para restaurante 7Tres7 (empanadas y mas) con tres apl
 - ✅ **Rediseño UI Caja — Dark Theme** (1 Mar 2026) — Glassmorphism, gradientes, glow buttons. Sub-tabs eliminadas → lista unificada con separadores de grupo por estado. Imágenes reales (Empanada-avatar.png, LOGO737.jpg).
 - ✅ **Flujo ENVIAR con cadetes** (1 Mar 2026) — Pedidos delivery en preparación muestran botón ENVIAR → modal selector de cadete → pasa a En Camino + notificación WhatsApp al cliente con nombre del cadete. En Camino muestra botón ENTREGADO → marca delivered.
 - ✅ **Print App v1.0.2 — Polling + Reconnect** (1 Mar 2026) — Causa raíz: canal Realtime hacía TIMED_OUT sin reconectar. Fix: polling backup cada 30s, reconexión en TIMED_OUT, dedup Realtime+polling, ventana pendientes 10min→1h, fix mapeo cooking_method/obs. Stress test: 10 pedidos simultáneos → 30 print_jobs → 20/20 Barra procesados OK.
+- ✅ **Dominio 7tres7.com** (24 Mar 2026) — Name.com → Vercel. A record + CNAME www. SSL automático.
+- ✅ **MercadoPago pagos reales** (24 Mar 2026) — Flujo completo funcionando en producción.
+- ✅ **Print Server v3.0.0** (24 Mar 2026) — Reescrito de Express HTTP a Supabase Realtime + Polling. Ya no depende de IPs fijas ni impresoras compartidas. INSTALAR.bat automático. Solo Barra y Cocina necesitan servidor; Barra2/Salón solo abren Caja web.
 
 ### ⏳ Pendiente
 
-#### Para probar ya (todo está conectado)
-- [ ] **Test de pago real** — Hacer un pedido con MercadoPago desde otra cuenta y verificar que el webhook actualiza `orders.payment_status` y crea registro en `payments`
-
 #### Necesita hardware/presencia física
-- [ ] **Impresoras térmicas — Instalar en local** — App v1.0.2 lista en pendrive `D:\737 app\`. Falta: copiar .exe + pc-config.json a cada PC, verificar nombres de impresoras en Windows, probar con pedido real.
+- [ ] **Print Server v3.0.0 — Instalar en local** — Pendrive `D:\737 app\` con INSTALAR.bat. Solo en PC Barra (opción 1) y PC Cocina (opción 2). Barra2/Salón no necesitan nada.
 - [ ] **Lucy WhatsApp** — Necesita teléfono del negocio para verificar número en Meta Cloud API
 
 #### Media prioridad
@@ -453,83 +453,64 @@ const groupDefs = [
 
 ---
 
-## Detalle Técnico: App Impresión Electron v1.0.2 (1 Mar 2026)
+## Detalle Técnico: Print Server v3.0.0 (24 Mar 2026)
 
 ### Arquitectura
-- **Comunicación**: Supabase Realtime + **Polling backup cada 30s** (v1.0.2)
-- **Flujo**: Caja confirma pedido → trigger SQL crea `print_jobs` row → Realtime notifica (o polling detecta) → Electron recibe → filtra items por categoría → imprime ESC/POS
-- **Bug encontrado (1 Mar 2026)**: Canal Realtime hacía `TIMED_OUT` y el código no reconectaba. Fix: manejar TIMED_OUT + polling backup
-- **Impresión**: Raw print via WinAPI (`winspool.drv WritePrinter`) usando PowerShell inline `-EncodedCommand` (NO archivos .ps1 externos). Fallback 1: `copy /b`. Fallback 2: `print /d:`.
+- **v3.0.0**: Node.js service (NO Electron) + Supabase Realtime + Polling 30s + Express HTTP (health/test)
+- **Flujo**: Caja confirma pedido → trigger SQL crea `print_jobs` → Realtime notifica (o polling detecta) → server.js imprime ESC/POS
+- **Impresión**: Raw print via WinAPI (`winspool.drv WritePrinter`) usando PowerShell inline `-EncodedCommand`. Fallback 1: `copy /b`. Fallback 2: `print /d:`.
 - **Codificación**: CP858 para caracteres españoles (ñ, á, é, etc.) via `iconv-lite`
+- **Servicio Windows**: Arranca automático con la PC via `node-windows`. Se reinstala con INSTALAR.bat.
+- **No depende de**: IPs fijas, impresoras compartidas Windows, Electron, Chrome flags
 
-### PCs y Impresoras
-| PC | IP | Nombre Windows | Modelo | Categorías |
-|----|----|-----------|---------|----|
-| BARRA | 192.168.1.6 | Barra | ITPOS 80EU | bebidas, gaseosas, cervezas, vinos + ticket completo |
-| COCINA | 192.168.1.9 | minuta | 3nStar RPT008 | empanadas, pizzas, minutas, postres |
-| COCINA | 192.168.1.9 | parrilla delivery | Hasar MIS1785 | restaurant, carnes, pastas, parrilla |
+### Historial de soluciones
+| Versión | Tecnología | Problema |
+|---------|-----------|---------|
+| v1 | QZ Tray | Dependencia Java, certificados, se colgaba |
+| v1.0.2 | Electron + Supabase | .exe 67MB, Realtime TIMED_OUT, frágil |
+| v2 | Express HTTP (IP fija) | Cambio de PC = se rompe todo |
+| **v3.0.0** | **Node.js service + Supabase** | **Actual — robusto a cambios de hardware** |
+
+### PCs e Impresoras
+| PC | Necesita server | Impresora USB | Nombre Windows (case-sensitive) | Modelo |
+|----|----------------|--------------|-------------------------------|--------|
+| Barra | SI | ITPOS 80EU | `Barra` | bebidas + ticket completo |
+| Cocina | SI | 3nStar RPT008 | `minuta` | empanadas, pizzas, minutas, postres |
+| Cocina | SI | Hasar MIS1785 | `parrilla delivery` | restaurant, carnes, pastas, parrilla |
+| Barra2 | NO | — | — | Solo abre Caja web |
+| Salón 1/2 | NO | — | — | Solo abre Caja web |
 
 ### Configuración por PC
-- Archivo `pc-config.json` junto al .exe: `{"pc": "BARRA", "printers": ["Barra"]}` o `{"pc": "COCINA", "printers": ["minuta", "parrilla delivery"]}`
-- Detección en 5 ubicaciones: PORTABLE_EXECUTABLE_DIR, junto al .exe, resources, relativo a src, CWD
-- Fallback: detecta por hostname de Windows
-- Default: BARRA
+- `C:\7Tres7\pc-config.json`: `{"pc":"BARRA","printers":["Barra"],"printerCodes":["BARRA"]}`
+- `printerCodes` mapea a la tabla `printers` de Supabase (campo `code`)
 - **Nombres CASE-SENSITIVE**: `Barra` (mayúscula), `minuta` y `parrilla delivery` (minúscula)
 
-### Formato `raw_data` en `print_jobs` (snake_case del trigger)
-```json
-{
-  "order_number": 123,
-  "delivery_type": "delivery",
-  "delivery_address": "Calle 18 N 737",
-  "items": [{"name": "Emp. Carne", "category": "empanadas", "quantity": 6, "price": 1700, "subtotal": 10200, "cooking_method": "horno", "obs": "Sin picante"}],
-  "subtotal": 25000, "discount": 0, "delivery_fee": 1500, "total": 26500,
-  "payment_method": "cash", "customer_notes": "Tocar timbre"
-}
-```
-- `main.js` mapea snake_case → camelCase antes de pasar a `printer.js`
-- v1.0.2 fix: `cooking_method` y `obs` ahora se mapean correctamente
+### Instalación (INSTALAR.bat)
+1. Enchufar pendrive en PC Barra o Cocina
+2. Doble click `INSTALAR.bat`
+3. Elegir perfil (1=Barra, 2=Cocina)
+4. Copia a `C:\7Tres7`, instala deps, registra servicio Windows
+5. Verifica `http://localhost:3001/health`
 
-### Robustez v1.0.2 (1 Mar 2026)
-- **Polling backup**: Cada 30s consulta Supabase por jobs pendientes (última hora)
-- **Reconnect TIMED_OUT**: Canal Realtime ahora reconecta en status TIMED_OUT (antes solo CLOSED/CHANNEL_ERROR)
-- **Dedup**: `processingJobs` Set evita que Realtime + polling procesen el mismo job
-- **Stress test OK**: 10 pedidos simultáneos → 30 jobs creados → 20/20 Barra procesados sin errores ni duplicados
-
-### SQL ejecutado (25 Feb)
-- Categorías asignadas a impresoras: Empanadas/Pizzas/Minutas/Postres → Minuta, Restaurant → Parrilla Delivery, Bebidas → Barra
-- Barra como `printer_secondary_id` en todas las categorías (ticket completo)
-- RLS: anon SELECT + UPDATE en `print_jobs`, anon SELECT en `printers`
-- Realtime habilitado en `print_jobs`
-- Trigger `create_print_jobs_for_order()`: filtra items por category, 1 job/impresora + 1 full_ticket para Barra
-
-### Pasos para instalar en las PCs del local
-1. SQL `14_PRINT_SYSTEM.sql` ya ejecutado
-2. Realtime verificado en `print_jobs`
-3. Compartir impresoras en Windows (nombres EXACTOS case-sensitive: "Barra", "minuta", "parrilla delivery")
-4. En PC Barra: copiar `7Tres7 Print 1.0.2.exe` + `pc-config.json` de `PC BARRA/` a una carpeta (ej: `C:\7Tres7\`), ejecutar
-5. En PC Cocina: copiar `7Tres7 Print 1.0.2.exe` + `pc-config.json` de `PC COCINA/` a una carpeta, ejecutar
-6. Verificar que diga "Conectado - Escuchando pedidos (Realtime + Polling)"
-7. Probar con botón "Imprimir Prueba" y luego con pedido real
-
-### Build del .exe portable
-```bash
-cd 7tres7-print-app
-npm run build:win
-# Genera dist/7Tres7 Print X.X.X.exe (portable, ~67MB)
-```
+### Si se quema una PC
+PC nueva → conectar impresora USB → pendrive → INSTALAR.bat → listo
 
 ### Estructura pendrive (D:\737 app\)
 ```
 737 app/
-├── 7Tres7 Print 1.0.1.exe      (v1.0.1, obsoleto)
-├── 7Tres7 Print 1.0.2.exe      (v1.0.2, polling + reconnect)
+├── INSTALAR.bat              <- Instalador automático
 ├── INSTRUCCIONES.txt
-├── PC BARRA/
-│   └── pc-config.json          {"pc":"BARRA","printers":["Barra"]}
+├── node-v22-installer.msi
+├── PC BARRA/                 <- server.js + printer.js + node_modules
+│   └── pc-config.json        {"pc":"BARRA","printers":["Barra"],"printerCodes":["BARRA"]}
 └── PC COCINA/
-    └── pc-config.json          {"pc":"COCINA","printers":["minuta","parrilla delivery"]}
+    └── pc-config.json        {"pc":"COCINA","printers":["minuta","parrilla delivery"],"printerCodes":["MINUTA","PARRILLA"]}
 ```
+
+### SQL (sin cambios)
+- Trigger `create_print_jobs_for_order()`: filtra items por category, 1 job/impresora + 1 full_ticket para Barra
+- RLS: anon SELECT + UPDATE en `print_jobs`, anon SELECT en `printers`
+- Realtime habilitado en `print_jobs`
 
 ---
 
@@ -548,7 +529,7 @@ npm run build:win
 
 ## Deployment y Verificación
 - Después de pushear a GitHub, Vercel auto-deploya. NO usar Vercel CLI a menos que se pida.
-- URLs de producción: App Usuario `https://7tres7-online.vercel.app`, Admin `https://7-tres7-admin.vercel.app`
+- URLs de producción: App Usuario `https://7tres7.com` (legacy: `https://7tres7-online.vercel.app`), Admin `https://7-tres7-admin.vercel.app`
 - DNS local no resuelve `api.vercel.com` — usar `--resolve api.vercel.com:443:76.76.21.112` para API calls
 
 ## Supabase y Migraciones
